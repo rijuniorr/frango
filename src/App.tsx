@@ -34,19 +34,25 @@ export default function App() {
   const [count, setCount] = useState(0)
   const [err, setErr] = useState('')
   const [info, setInfo] = useState('')
+  const [ratio, setRatio] = useState('3 / 4')
 
   async function start() {
     stream.current?.getTracks().forEach(t => t.stop())
     setErr('')
     try {
       const s = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1920 } },
+        // pedir "o máximo" (4096²) faz o celular usar o sensor inteiro, sem recorte = sem zoom
+        video: { facingMode: facing, width: { ideal: 4096 }, height: { ideal: 4096 } },
         audio: false,
       })
       stream.current = s
+      const tr = s.getVideoTracks()[0]
+      // Android: alguns aparelhos abrem com zoom digital → força o mínimo
+      const caps = (tr.getCapabilities?.() ?? {}) as { zoom?: { min: number } }
+      if (caps.zoom) await tr.applyConstraints({ advanced: [{ zoom: caps.zoom.min } as MediaTrackConstraintSet] }).catch(() => {})
       video.current!.srcObject = s
       await video.current!.play()
-      const st = s.getVideoTracks()[0].getSettings()
+      const st = tr.getSettings()
       setInfo(`${st.width}×${st.height}`)
     } catch (e) {
       setErr(String((e as Error).message || e))
@@ -68,14 +74,14 @@ export default function App() {
     const v = video.current!
     const vw = v.videoWidth, vh = v.videoHeight
     if (!vw) return
-    // recorta 3:4 em pé, igual ao que aparece na tela (object-fit: cover)
-    const W = 900, H = 1200
-    const s = Math.max(W / vw, H / vh)
+    // foto inteira, sem recorte; lado maior até 1600 px
+    const k = Math.min(1, 1600 / Math.max(vw, vh))
+    const W = Math.round(vw * k), H = Math.round(vh * k)
     const cv = document.createElement('canvas')
     cv.width = W; cv.height = H
     const g = cv.getContext('2d')!
     if (facing === 'user') { g.translate(W, 0); g.scale(-1, 1) }
-    g.drawImage(v, (W - vw * s) / 2, (H - vh * s) / 2, vw * s, vh * s)
+    g.drawImage(v, 0, 0, W, H)
     setShot(cv.toDataURL('image/jpeg', 0.85))
     hap(40)
   }
@@ -94,11 +100,10 @@ export default function App() {
     // fantasma menor pra caber no localStorage
     const img = new Image()
     img.onload = () => {
+      const k = 600 / Math.max(img.width, img.height)
       const cv = document.createElement('canvas')
-      cv.width = 450; cv.height = 600
-      const g = cv.getContext('2d')!
-      const s = Math.max(450 / img.width, 600 / img.height)
-      g.drawImage(img, (450 - img.width * s) / 2, (600 - img.height * s) / 2, img.width * s, img.height * s)
+      cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k)
+      cv.getContext('2d')!.drawImage(img, 0, 0, cv.width, cv.height)
       const small = cv.toDataURL('image/jpeg', 0.7)
       try { localStorage.setItem(key(angle), small) } catch { /* cheio */ }
       setGhost(small)
@@ -119,8 +124,11 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="frame">
-        <video ref={video} playsInline muted autoPlay className={facing === 'user' ? 'mirror' : ''} />
+      {/* moldura segue o formato real da câmera → nada é cortado */}
+      <div className="frame" style={{ aspectRatio: ratio }}>
+        <video ref={video} playsInline muted autoPlay className={facing === 'user' ? 'mirror' : ''}
+          onLoadedMetadata={e => setRatio(`${e.currentTarget.videoWidth} / ${e.currentTarget.videoHeight}`)}
+          onResize={e => setRatio(`${e.currentTarget.videoWidth} / ${e.currentTarget.videoHeight}`)} />
         {ghost && <img src={ghost} className="ghost" alt="" />}
         <svg viewBox="0 0 200 400" className="outline" aria-hidden="true">
           <circle cx="100" cy="50" r="23" />
