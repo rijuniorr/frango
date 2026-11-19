@@ -23,7 +23,8 @@ button, label { font: inherit; color: inherit; border: 0; background: none; curs
 .frame { position: relative; width: 100%; max-width: 460px; border-radius: 28px; overflow: hidden; background: #111; }
 .frame video, .ghost { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .mirror { transform: scaleX(-1); }
-.ghost { opacity: .35; mix-blend-mode: screen; pointer-events: none; }
+.ghost { opacity: var(--go, .55); pointer-events: none; }
+.fade { width: min(260px, 70%); accent-color: var(--g); }
 .outline { position: absolute; left: 50%; top: 6%; height: 90%; transform: translateX(-50%); fill: none; stroke: rgba(255, 255, 255, .85); stroke-width: 1.6; stroke-dasharray: 5 5; pointer-events: none; }
 
 .top { position: absolute; inset: 12px 14px auto; display: flex; justify-content: space-between; align-items: center; }

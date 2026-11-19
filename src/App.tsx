@@ -35,6 +35,7 @@ export default function App() {
   const [err, setErr] = useState('')
   const [info, setInfo] = useState('')
   const [ratio, setRatio] = useState('3 / 4')
+  const [go, setGo] = useState(() => { try { return +(localStorage.getItem('frango.go') ?? 0.55) } catch { return 0.55 } })
 
   async function start() {
     stream.current?.getTracks().forEach(t => t.stop())
@@ -129,7 +130,7 @@ export default function App() {
         <video ref={video} playsInline muted autoPlay className={facing === 'user' ? 'mirror' : ''}
           onLoadedMetadata={e => setRatio(`${e.currentTarget.videoWidth} / ${e.currentTarget.videoHeight}`)}
           onResize={e => setRatio(`${e.currentTarget.videoWidth} / ${e.currentTarget.videoHeight}`)} />
-        {ghost && <img src={ghost} className="ghost" alt="" />}
+        {ghost && <img src={ghost} className="ghost" alt="" style={{ '--go': go } as React.CSSProperties} />}
         <svg viewBox="0 0 200 400" className="outline" aria-hidden="true">
           <circle cx="100" cy="50" r="23" />
           <path d={BODY} />
@@ -141,6 +142,11 @@ export default function App() {
           <span className="tag">{standalone ? 'app instalado' : 'navegador'} · {info || '—'}</span>
         </div>
       </div>
+
+      {ghost && (
+        <input type="range" className="fade" aria-label="Força do fantasma" min={0.15} max={0.9} step={0.05} value={go}
+          onChange={e => { const v = +e.target.value; setGo(v); hap(5); try { localStorage.setItem('frango.go', String(v)) } catch { /* */ } }} />
+      )}
 
       <div className="seg">
         {ANGLES.map(a => (
