@@ -49,7 +49,7 @@ export default function Install() {
     setState('wait')
     const ev = await waitBip(6000) // o Chrome às vezes demora uns segundos pra liberar
     if (!ev) { setState((await installedHere()) ? 'already' : 'manual'); return }
-    await ev.prompt() // a janela "Instalar Frango?" do próprio navegador
+    await ev.prompt() // a janela "Instalar Frangos?" do próprio navegador
     const r = await ev.userChoice
     w.__bip = null
     if (r.outcome === 'accepted') { setState('done'); hap([20, 40, 60]); setTimeout(() => setOpen(false), 1800) }
@@ -60,13 +60,13 @@ export default function Install() {
     <Sheet onClose={later}>
       <div className="install">
         <img src="./icon-192.png" alt="" className="install-icon" />
-        <h3>{state === 'done' ? 'Instalado!' : state === 'already' ? 'Já tá instalado' : 'Instala o Frango'}</h3>
+        <h3>{state === 'done' ? 'Instalado!' : state === 'already' ? 'Já tá instalado' : 'Instala o Frangos'}</h3>
 
         {state === 'done' ? (
-          <p>O ícone do Frango tá na tua tela inicial. Abre por ele daqui pra frente.</p>
+          <p>O ícone do Frangos tá na tua tela inicial. Abre por ele daqui pra frente.</p>
         ) : state === 'already' ? (
           <>
-            <p>O Frango já tá na tua tela inicial. Fecha o navegador e abre pelo ícone.</p>
+            <p>O Frangos já tá na tua tela inicial. Fecha o navegador e abre pelo ícone.</p>
             <button className="btn big" onClick={later}>Beleza</button>
           </>
         ) : ios ? (

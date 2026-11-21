@@ -10,7 +10,7 @@ export function unlockAudio() {
   } catch { /* sem som */ }
 }
 // bip FINO e ALTO (onda quadrada ~2 kHz: corta o barulho e o alto-falante do celular reproduz bem)
-export function beep(freq = 2000, ms = 80, vol = 0.5) {
+export function beep(freq = 2000, ms = 80, vol = 0.16) {
   if (!ac) return
   const o = ac.createOscillator(), g = ac.createGain()
   o.type = 'square'; o.frequency.value = freq
@@ -26,7 +26,7 @@ export function tone(on: boolean, freq = 2400) {
   if (!on) { if (tn && ac) { try { tn.g.gain.setTargetAtTime(0, ac.currentTime, 0.03); tn.o.stop(ac.currentTime + 0.2) } catch { /* */ } } tn = null; return }
   if (tn || !ac) return
   const o = ac.createOscillator(), g = ac.createGain()
-  o.type = 'square'; o.frequency.value = freq; g.gain.value = 0.0001; g.gain.setTargetAtTime(0.35, ac.currentTime, 0.02)
+  o.type = 'square'; o.frequency.value = freq; g.gain.value = 0.0001; g.gain.setTargetAtTime(0.09, ac.currentTime, 0.02)
   o.connect(g).connect(ac.destination); o.start(); tn = { o, g }
 }
 

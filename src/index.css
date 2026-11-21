@@ -510,3 +510,15 @@ img { display: block; }
 .radar small { font-size: 15px; color: var(--g); font-weight: 700; }
 .cam > .wk { color: var(--mut); min-height: 40px; }
 @media (max-height: 640px) { .cam .frame { width: min(100%, calc(44dvh * 3 / 4)); } .radar b { font-size: 18px; } .cam { gap: 10px; } }
+
+/* ---- esqueleto ao vivo + molde ---- */
+.skel { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.skel .center { stroke: rgba(255, 255, 255, .35); stroke-width: 1; stroke-dasharray: 4 6; }
+.skel g line { stroke-linecap: round; }
+.skel g circle { fill: none; }
+.skel .ref line, .skel .ref circle { stroke: rgba(255, 255, 255, .75); stroke-width: 3; stroke-dasharray: 6 6; }
+.skel .ref .j { display: none; }
+.skel .live line, .skel .live circle { stroke: var(--amber); stroke-width: 6; filter: drop-shadow(0 0 6px rgba(255, 176, 32, .7)); }
+.skel .live .j { fill: var(--amber); stroke-width: 0; }
+.skel .live.ok line, .skel .live.ok circle { stroke: var(--g); filter: drop-shadow(0 0 8px var(--g)); }
+.skel .live.ok .j { fill: var(--g); }

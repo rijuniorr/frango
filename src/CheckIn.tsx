@@ -34,7 +34,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   const [busy, setBusy] = useState(false)
   const [crop, setCrop] = useState<string | null>(null)
   const [tips, setTips] = useState(() => { try { return !localStorage.getItem('frango.dicas2') } catch { return false } })
-  const [sense, setSense] = useState<{ score: number; hint: string; ok: boolean; on: number } | null>(null)
+  const [sense, setSense] = useState<{ score: number; hint: string; ok: boolean; on: number; live: Pose | null } | null>(null)
   const meta = useRef<Partial<Record<Angle, { pose: Pose | null; lum: number }>>>({})
   useBack(close)
 
@@ -70,13 +70,14 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
       try {
         const mirror = s.facing === 'user'
         const raw = detectVideo(lmk, v, now)
-        const r = easyScore(raw && toCrop(raw, v.videoWidth, v.videoHeight, mirror), s.ref, mirror)
+        const live = raw && toCrop(raw, v.videoWidth, v.videoHeight, mirror)
+        const r = easyScore(live, s.ref, mirror)
         smooth = r.score === 0 ? 0 : smooth ? smooth * 0.6 + r.score * 0.4 : r.score // tira a tremida da nota
         score = Math.round(smooth)
         const ok = score >= 50
         if (ok) { onSince ||= now } else onSince = 0
         const on = ok ? Math.min(1, (now - onSince) / HOLD_MS) : 0
-        setSense({ score, hint: ok ? 'Isso! Fica parado' : r.hint, ok, on })
+        setSense({ score, hint: ok ? 'Isso! Fica parado' : r.hint, ok, on, live })
         if (ok && now - onSince >= HOLD_MS) { onSince = 0; tone(false); s.shoot() }
       } catch { /* frame ruim: pula */ }
     }
@@ -124,7 +125,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
     const g = cv.getContext('2d')!
     if (facing === 'user') { g.translate(1200, 0); g.scale(-1, 1) }
     g.drawImage(v, (vw - cw) / 2, (vh - ch) / 2, cw, ch, 0, 0, 1200, 1600)
-    beep(2600, 250, 0.6); hap([30, 40, 80])
+    beep(2600, 250, 0.2); hap([30, 40, 80])
     cv.toBlob(b => b && addShot(b), 'image/jpeg', 0.88)
   }
 
@@ -214,7 +215,13 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
           <div className="frame">
             <video ref={video} playsInline muted autoPlay className={facing === 'user' ? 'mirror' : ''} />
             {ghost && <img src={ghost} className="ghost" alt="" />}
-            <svg viewBox="0 0 200 400" className={'outline' + (sense?.ok ? ' on' : '')} aria-hidden="true"><circle cx="100" cy="50" r="23" /><path d={BODY} /></svg>
+            {/* molde: esqueleto da tua 1ª foto desse ângulo (fica de lado no "lado"); sem foto ainda, o boneco só na frente */}
+            {!refPose && angle === 'frente' && <svg viewBox="0 0 200 400" className="outline" aria-hidden="true"><circle cx="100" cy="50" r="23" /><path d={BODY} /></svg>}
+            <svg viewBox="0 0 300 400" className="skel" aria-hidden="true">
+              <line x1="150" y1="0" x2="150" y2="400" className="center" />
+              {refPose && <Skel pose={refPose} cls="ref" />}
+              {sense?.live && <Skel pose={sense.live} cls={'live' + (sense.ok ? ' ok' : '')} />}
+            </svg>
             {shots[angle] && <img src={shots[angle]!.url} className="taken" alt="" />}
             {count > 0 && <div className="count" key={count}>{count}</div>}
             {err && <div className="err">{err}</div>}
@@ -273,5 +280,21 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
       )}
       {crop && <Cropper src={crop} aspect={3 / 4} outW={1200} title={`Ajustar · ${angle}`} onDone={addShot} onCancel={() => setCrop(null)} />}
     </div>
+  )
+}
+
+// esqueleto (pontos do MediaPipe em 0..1 do recorte 3:4 → caixa 300×400)
+const BONES = [[11, 12], [11, 13], [13, 15], [12, 14], [14, 16], [11, 23], [12, 24], [23, 24], [23, 25], [25, 27], [24, 26], [26, 28]]
+function Skel({ pose, cls }: { pose: Pose; cls: string }) {
+  const vis = (i: number) => pose[i] && pose[i][2] > 0.5
+  const X = (i: number) => pose[i][0] * 300, Y = (i: number) => pose[i][1] * 400
+  const head = vis(0) ? [X(0), Y(0)] : vis(11) && vis(12) ? [(X(11) + X(12)) / 2, (Y(11) + Y(12)) / 2 - Math.abs(X(11) - X(12)) * 0.9] : null
+  const r = vis(11) && vis(12) ? Math.max(12, Math.abs(X(11) - X(12)) * 0.32) : 16
+  return (
+    <g className={cls}>
+      {BONES.filter(([a, b]) => vis(a) && vis(b)).map(([a, b]) => <line key={a + '-' + b} x1={X(a)} y1={Y(a)} x2={X(b)} y2={Y(b)} />)}
+      {head && <circle cx={head[0]} cy={head[1]} r={r} />}
+      {[11, 12, 23, 24].filter(vis).map(i => <circle key={i} className="j" cx={X(i)} cy={Y(i)} r={5} />)}
+    </g>
   )
 }
