@@ -75,7 +75,7 @@ export default function App() {
   const go = (k: Tab) => {
     const a = TABS.findIndex(t => t[0] === tab), b = TABS.findIndex(t => t[0] === k)
     if (a === b) return
-    setDir(b > a ? 1 : -1); setTab(k); hap(8); scrollTo(0, 0)
+    setDir(b > a ? 1 : -1); setTab(k); hap(8)
   }
 
   // deslizar o dedo pro lado troca de aba: a tela segue o dedo e volta com mola se não passar do ponto.

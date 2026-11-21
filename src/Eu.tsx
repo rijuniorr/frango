@@ -134,7 +134,7 @@ export default function Eu({ data, reload, mutate, toast }: Ctx) {
           <span>iPhone: Safari → Compartilhar → Adicionar à Tela de Início. Android: menu ⋮ → Instalar app.</span>
         </div>
       )}
-      <p className="ver">frango · v0.4</p>
+      <p className="ver">frango · v0.6</p>
       {crop && <Cropper src={crop} aspect={1} round outW={500} title="foto de perfil" onDone={photo} onCancel={() => setCrop(null)} />}
     </>
   )
