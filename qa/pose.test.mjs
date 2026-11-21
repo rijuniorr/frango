@@ -1,6 +1,6 @@
 // node qa/pose.test.mjs — sem framework
 import assert from 'node:assert/strict'
-import { scorePose, easyScore, alignTransform, defaultRef, toCrop } from '../src/pose.ts'
+import { scorePose, easyScore, orient, alignTransform, defaultRef, toCrop } from '../src/pose.ts'
 
 const base = () => defaultRef('frente')
 const tx = (p, f) => p.map(([x, y, v]) => { const [a, b] = f(x, y); return [a, b, v] })
@@ -82,5 +82,17 @@ assert.ok(Math.abs(id.scale - 1) < 1e-9 && Math.abs(id.dx) < 1e-9 && Math.abs(id
   // a nota cresce conforme chega perto (o bip acelera)
   const s1 = easyScore(shift(ref, 0.15), ref).score, s2 = easyScore(shift(ref, 0.08), ref).score, s3 = easyScore(shift(ref, 0.02), ref).score
   assert.ok(s1 < s2 && s2 < s3, `${s1} ${s2} ${s3}`)
+}
+
+
+// ---- frente / lado / costas
+{
+  const frente = base().map((l, i) => ([0, 2, 5].includes(i) ? [l[0], l[1], 0.98] : l))
+  assert.equal(orient(frente), 'frente')
+  const costas = frente.map((l, i) => (i <= 10 ? [l[0], l[1], 0.2] : l)) // rosto escondido
+  assert.equal(orient(costas), 'costas')
+  const lado = frente.map((l, i) => ([11, 12].includes(i) ? [0.5 + (i === 11 ? -0.03 : 0.03), l[1], l[2]] : [23, 24].includes(i) ? [0.5 + (i === 23 ? -0.02 : 0.02), l[1], l[2]] : l))
+  assert.equal(orient(lado), 'lado')
+  assert.equal(orient(null), null)
 }
 console.log('pose.test OK')

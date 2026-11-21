@@ -99,6 +99,18 @@ export function easyScore(live: Pose | null, ref: Pose | null, mirror = true): R
   return { score, hint: ok ? 'Isso! Fica parado' : say[worst], ok, worst }
 }
 
+// de frente, de lado ou de costas? (largura dos ombros ÷ tronco; rosto visível = frente)
+export function orient(p: Pose | null): Ang | null {
+  if (!p || ![...SH, ...HIP].every(i => p[i][2] > 0.4)) return null
+  const s = mid(p, SH), h = mid(p, HIP)
+  const torso = Math.hypot((s[0] - h[0]) * W, (s[1] - h[1]) * H)
+  const shw = Math.abs(p[SH[0]][0] - p[SH[1]][0]) * W
+  if (shw / torso < 0.5) return 'lado'
+  const face = Math.max(p[NOSE][2], p[2]?.[2] ?? 0, p[5]?.[2] ?? 0) // nariz/olhos
+  return face > 0.6 ? 'frente' : 'costas'
+}
+export const turnHint = (a: Ang) => (a === 'frente' ? 'Vira de frente pra câmera' : a === 'lado' ? 'Vira de lado pra câmera' : 'Vira de costas pra câmera')
+
 // transformação (CSS) que leva a pose `pose` em cima da `ref`: translate(dx,dy em fração da caixa) rotate(rot°) scale(scale)
 export type Align = { scale: number; dx: number; dy: number; rot: number }
 export function alignTransform(ref: Pose, pose: Pose): Align {

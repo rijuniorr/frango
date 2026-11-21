@@ -3,7 +3,7 @@ import type { Ctx } from './App'
 import { sb, hap, iso, monday, shrink, nice, ANGLES, type Angle, type Checkin } from './lib'
 import { Ruler, Hold, useBack, Sheet } from './ui'
 import { unlockAudio, beep, tone } from './level'
-import { loadPose, releasePose, detectVideo, detectPhoto, toCrop, easyScore, type Pose } from './pose'
+import { loadPose, releasePose, detectVideo, detectPhoto, toCrop, easyScore, orient, turnHint, type Pose, type Ang } from './pose'
 import { nowWeight } from './Feed'
 import Cropper from './Cropper'
 
@@ -53,6 +53,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
     if (step !== 'cam') return
     let dead = false, raf = 0, last = 0, onSince = 0, nextBeep = 0
     let score = -1, smooth = 0
+    const seen: (Ang | null)[] = [] // últimas leituras de frente/lado/costas (maioria = o que vale)
     let lmk: Awaited<ReturnType<typeof loadPose>> | null = null
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
@@ -71,7 +72,12 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
         const mirror = s.facing === 'user'
         const raw = detectVideo(lmk, v, now)
         const live = raw && toCrop(raw, v.videoWidth, v.videoHeight, mirror)
-        const r = easyScore(live, s.ref, mirror)
+        seen.push(orient(live)); if (seen.length > 7) seen.shift()
+        const votes = seen.filter(Boolean) as Ang[]
+        const facing = votes.length >= 3 ? (['frente', 'lado', 'costas'] as Ang[]).sort((a, b) => votes.filter(x => x === b).length - votes.filter(x => x === a).length)[0] : null
+        let r = easyScore(live, s.ref, mirror)
+        // posição errada pra foto da vez (ex.: de frente na foto de lado): não aprova, bip lento e pede pra virar
+        if (r.score > 0 && facing && facing !== s.angle) r = { ...r, score: 6, ok: false, hint: turnHint(s.angle as Ang) }
         smooth = r.score === 0 ? 0 : smooth ? smooth * 0.6 + r.score * 0.4 : r.score // tira a tremida da nota
         score = Math.round(smooth)
         const ok = score >= 50

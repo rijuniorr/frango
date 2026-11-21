@@ -6,11 +6,16 @@ let ac: AudioContext | null = null
 export function unlockAudio() {
   try {
     ac ??= new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
-    if (ac.state === 'suspended') ac.resume()
+    if (ac.state !== 'running') ac.resume()
+    // iPhone: um som mudo dentro do toque "destrava" o alto-falante
+    const b = ac.createBuffer(1, 1, 22050), s = ac.createBufferSource(); s.buffer = b; s.connect(ac.destination); s.start(0)
   } catch { /* sem som */ }
 }
+export const audioOn = () => ac?.state === 'running'
+// o celular só libera áudio dentro de um toque: QUALQUER toque no app destrava (inclusive o que abre a câmera)
+for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) addEventListener(ev, unlockAudio, { capture: true, passive: true })
 // bip FINO e ALTO (onda quadrada ~2 kHz: corta o barulho e o alto-falante do celular reproduz bem)
-export function beep(freq = 2000, ms = 80, vol = 0.16) {
+export function beep(freq = 2000, ms = 80, vol = 0.22) {
   if (!ac) return
   const o = ac.createOscillator(), g = ac.createGain()
   o.type = 'square'; o.frequency.value = freq
@@ -26,7 +31,7 @@ export function tone(on: boolean, freq = 2400) {
   if (!on) { if (tn && ac) { try { tn.g.gain.setTargetAtTime(0, ac.currentTime, 0.03); tn.o.stop(ac.currentTime + 0.2) } catch { /* */ } } tn = null; return }
   if (tn || !ac) return
   const o = ac.createOscillator(), g = ac.createGain()
-  o.type = 'square'; o.frequency.value = freq; g.gain.value = 0.0001; g.gain.setTargetAtTime(0.09, ac.currentTime, 0.02)
+  o.type = 'square'; o.frequency.value = freq; g.gain.value = 0.0001; g.gain.setTargetAtTime(0.12, ac.currentTime, 0.02)
   o.connect(g).connect(ac.destination); o.start(); tn = { o, g }
 }
 
