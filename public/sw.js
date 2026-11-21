@@ -1,11 +1,16 @@
-// ponytail: só rede com fallback pro cache; offline de verdade vem na Fase 2
+// Só guarda os arquivos do PRÓPRIO app (pra abrir rápido/sem rede). Supabase e fotos nunca passam por aqui.
+const CACHE = 'frango-v7'
 self.addEventListener('install', () => self.skipWaiting())
-self.addEventListener('activate', e => e.waitUntil(self.clients.claim()))
+self.addEventListener('activate', e => e.waitUntil((async () => {
+  for (const k of await caches.keys()) if (k !== CACHE) await caches.delete(k) // limpa caches antigos (inclusive o que guardava fotos)
+  await self.clients.claim()
+})()))
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return
+  const url = new URL(e.request.url)
+  if (e.request.method !== 'GET' || url.origin !== location.origin) return
+  // rede primeiro (sempre a versão nova), cache só se estiver sem internet
   e.respondWith(fetch(e.request).then(r => {
-    const copy = r.clone()
-    caches.open('frango').then(c => c.put(e.request, copy))
+    if (r.ok) { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)) }
     return r
-  }).catch(() => caches.match(e.request)))
+  }).catch(() => caches.match(e.request).then(r => r || caches.match('./'))))
 })

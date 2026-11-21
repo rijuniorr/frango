@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { hap } from './lib'
+import { hap, gesture } from './lib'
+import { useBack } from './ui'
 
 // editor de foto: arrasta pra posicionar, pinça (ou slider) pra zoom, gira 90°.
 // aspect = largura/altura do recorte; round = mostra máscara redonda (foto de perfil)
@@ -17,6 +18,8 @@ export default function Cropper({ src, aspect, round, outW, title, onDone, onCan
   const pts = useRef(new Map<number, { x: number; y: number }>())
   const pinch = useRef<{ d: number; z: number } | null>(null)
   const fh = fw / aspect
+  useBack(onCancel)
+  useEffect(() => { gesture.lock = true; return () => { gesture.lock = false } }, [])
 
   useEffect(() => {
     const i = new Image()
@@ -24,7 +27,8 @@ export default function Cropper({ src, aspect, round, outW, title, onDone, onCan
     i.src = src
   }, [src])
   useEffect(() => {
-    const f = () => setFw(Math.min(innerWidth - 32, 440, (innerHeight - 260) * aspect))
+    // cabe na tela em pé e deitado (mínimo 200px)
+    const f = () => setFw(Math.max(200 * Math.min(1, aspect), Math.min(innerWidth - 48, 440, (innerHeight - 280) * aspect)))
     f(); addEventListener('resize', f)
     return () => removeEventListener('resize', f)
   }, [aspect])
@@ -83,9 +87,9 @@ export default function Cropper({ src, aspect, round, outW, title, onDone, onCan
   return createPortal(
     <div className="crop">
       <div className="cam-top">
-        <button className="ib" onClick={onCancel}>cancelar</button>
+        <button className="ib" onClick={onCancel}>Cancelar</button>
         <span className="pill">{title}</span>
-        <button className="ib g" onClick={done}>usar</button>
+        <button className="ib g" onClick={done}>Usar</button>
       </div>
       <div className={'crop-box' + (round ? ' round' : '')} ref={box} style={{ width: fw, height: fh }}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
@@ -95,17 +99,18 @@ export default function Cropper({ src, aspect, round, outW, title, onDone, onCan
           transform: `translate(-50%, -50%) translate(${p.x}px, ${p.y}px) rotate(${rot}deg) scale(${s})`,
         }} />}
         <i className="grid" />
+        <i className="mask" />
       </div>
-      <p className="hint">arrasta pra posicionar · pinça pra zoom</p>
+      <p className="hint">Arrasta pra posicionar · pinça pra dar zoom</p>
       <div className="crop-ctl">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="M8 11h6M20 20l-4.5-4.5" /></svg>
         <input type="range" className="fade" min={1} max={5} step={0.01} value={z} onChange={e => setZ(+e.target.value)} aria-label="Zoom" />
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6" /><path d="M8 11h6M11 8v6M20 20l-4.5-4.5" /></svg>
       </div>
       <div className="row">
-        <button className="ib" onClick={() => { setRot(r => (r + 270) % 360); setPos({ x: 0, y: 0 }); hap(8) }}>↺ girar</button>
-        <button className="ib" onClick={() => { setZ(1); setPos({ x: 0, y: 0 }); hap(6) }}>resetar</button>
-        <button className="ib" onClick={() => { setRot(r => (r + 90) % 360); setPos({ x: 0, y: 0 }); hap(8) }}>girar ↻</button>
+        <button className="ib" onClick={() => { setRot(r => (r + 270) % 360); setPos({ x: 0, y: 0 }); hap(8) }} aria-label="Girar pra esquerda">↺ Girar</button>
+        <button className="ib" onClick={() => { setZ(1); setPos({ x: 0, y: 0 }); hap(6) }}>Resetar</button>
+        <button className="ib" onClick={() => { setRot(r => (r + 90) % 360); setPos({ x: 0, y: 0 }); hap(8) }} aria-label="Girar pra direita">Girar ↻</button>
       </div>
     </div>,
     document.body,

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Ctx } from './App'
-import { sb, hap, iso, monday, shrink, ANGLES, type Angle } from './lib'
-import { Ruler, Hold } from './ui'
+import { sb, hap, iso, monday, shrink, nice, ANGLES, type Angle } from './lib'
+import { Ruler, Hold, useBack } from './ui'
+import { nowWeight } from './Feed'
 import Cropper from './Cropper'
 
 // mesma silhueta do protótipo (viewBox 0 0 200 400)
@@ -10,9 +11,10 @@ const BODY = `M${c-11} 76C${c-20} 84 ${c-p.sh+8} 86 ${c-p.sh} 98L${c-p.sh-24} 19
 
 type Shot = { blob: Blob; url: string }
 
-export default function CheckIn({ data, reload, toast, close }: Ctx & { close: () => void }) {
+export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { close: () => void }) {
   const video = useRef<HTMLVideoElement>(null)
   const stream = useRef<MediaStream | null>(null)
+  const timer = useRef(0)
   const [step, setStep] = useState<'cam' | 'form'>('cam')
   const [facing, setFacing] = useState<'user' | 'environment'>('user')
   const [angle, setAngle] = useState<Angle>('frente')
@@ -21,17 +23,22 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
   const [ratio, setRatio] = useState('3 / 4')
   const [err, setErr] = useState('')
   const [go, setGo] = useState(() => { try { return +(localStorage.getItem('frango.go') ?? 0.55) } catch { return 0.55 } })
+  const week = iso(monday())
   const mine = data.checkins.filter(x => x.user_id === data.me)
-  const lastW = [...mine].reverse().find(x => x.weight != null)?.weight
-  const [weight, setWeight] = useState(lastW ?? 80)
-  const [note, setNote] = useState('')
+  const existing = mine.find(x => x.week === week)
+  const lastW = nowWeight({ data }, data.me)
+  const [weight, setWeight] = useState(existing?.weight ?? lastW ?? 80)
+  const [note, setNote] = useState(existing?.note ?? '')
   const [busy, setBusy] = useState(false)
   const [crop, setCrop] = useState<string | null>(null)
-  const week = iso(monday())
+  useBack(close)
 
-  // fantasma = última foto sua desse ângulo
+  // fantasma = última foto sua desse ângulo (de outra semana)
   const prevPath = [...mine].reverse().find(x => x.photos[angle] && x.week !== week)?.photos[angle]
   const ghost = prevPath ? data.urls[prevPath] : undefined
+
+  const stopTimer = () => { clearInterval(timer.current); timer.current = 0; setCount(0) }
+  useEffect(() => () => clearInterval(timer.current), []) // fechou no meio do 3-2-1: para
 
   useEffect(() => {
     if (step !== 'cam') return
@@ -42,22 +49,26 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
       try {
         // pedir o máximo faz o celular usar o sensor inteiro (sem zoom)
         const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 4096 }, height: { ideal: 4096 } }, audio: false })
-        if (dead) { s.getTracks().forEach(t => t.stop()); return }
+        if (dead || !video.current) { s.getTracks().forEach(t => t.stop()); return }
         stream.current = s
         const tr = s.getVideoTracks()[0]
         const caps = (tr.getCapabilities?.() ?? {}) as { zoom?: { min: number } }
         if (caps.zoom) await tr.applyConstraints({ advanced: [{ zoom: caps.zoom.min } as MediaTrackConstraintSet] }).catch(() => {})
-        video.current!.srcObject = s
-        await video.current!.play()
-      } catch (e) { setErr(String((e as Error).message || e)) }
+        video.current.srcObject = s
+        await video.current.play()
+      } catch (e) {
+        if (dead) return
+        const name = (e as Error)?.name ?? ''
+        setErr(/NotAllowed|Security/i.test(name) ? 'O app não tem permissão pra câmera. Libera nas configurações ou usa a galeria.' : 'Não deu pra abrir a câmera. Usa a galeria.')
+      }
     })()
-    return () => { dead = true; stream.current?.getTracks().forEach(t => t.stop()) }
+    return () => { dead = true; stopTimer(); stream.current?.getTracks().forEach(t => t.stop()) }
   }, [facing, step])
 
   function grab() {
-    const v = video.current!
+    const v = video.current
+    if (!v || !v.videoWidth) return
     const vw = v.videoWidth, vh = v.videoHeight
-    if (!vw) return
     const k = Math.min(1, 2000 / Math.max(vw, vh))
     const cv = document.createElement('canvas')
     cv.width = Math.round(vw * k); cv.height = Math.round(vh * k)
@@ -73,16 +84,17 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
     setCrop(null)
     setShots(s => ({ ...s, [angle]: { blob, url: URL.createObjectURL(blob) } }))
     hap(40)
-    const next = ANGLES[ANGLES.indexOf(angle) + 1]
-    if (next) setTimeout(() => setAngle(next), 500)
+    const next = ANGLES.find(a => a !== angle && !shots[a])
+    if (next) setTimeout(() => setAngle(next), 450)
   }
 
   function countdown() {
+    if (timer.current || err) return
     let n = 3
     setCount(n); hap()
-    const t = setInterval(() => {
+    timer.current = window.setInterval(() => {
       n--
-      if (n === 0) { clearInterval(t); setCount(0); grab() }
+      if (n === 0) { stopTimer(); grab() }
       else { setCount(n); hap() }
     }, 1000)
   }
@@ -91,30 +103,38 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
   async function native(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     e.target.value = ''
-    if (f) setCrop(URL.createObjectURL(await shrink(f, 2000)))
+    if (!f) return
+    try { setCrop(URL.createObjectURL(await shrink(f, 2000))) } catch (er) { toast(nice(er), 'err') }
   }
 
   async function post() {
     setBusy(true)
+    const sent: string[] = []
     try {
-      const existing = mine.find(x => x.week === week)
       const photos: Partial<Record<Angle, string>> = { ...(existing?.photos ?? {}) }
+      const replaced: string[] = []
       for (const a of ANGLES) {
         const s = shots[a]
         if (!s) continue
         const path = `${data.me}/${week}/${a}-${Date.now()}.jpg`
         const { error } = await sb.storage.from('fotos').upload(path, s.blob, { contentType: 'image/jpeg' })
         if (error) throw error
+        sent.push(path)
+        if (photos[a]) replaced.push(photos[a]!)
         photos[a] = path
       }
-      const { error } = await sb.from('checkins').upsert({ user_id: data.me, week, weight, note: note.trim() || existing?.note || null, photos }, { onConflict: 'user_id,week' })
+      const { error } = await sb.from('checkins').upsert({ user_id: data.me, week, weight, note: note.trim() || null, photos }, { onConflict: 'user_id,week' })
       if (error) throw error
+      if (replaced.length) sb.storage.from('fotos').remove(replaced) // foto trocada na mesma semana: apaga a velha
+      await sb.from('profiles').update({ weight_kg: weight }).eq('id', data.me) // "peso atual" acompanha o check-in
+      mutate(d => ({ ...d, profiles: d.profiles.map(x => (x.id === data.me ? { ...x, weight_kg: weight } : x)) }))
       await reload()
       toast('Check-in postado. Bora, frango.')
       close()
     } catch (e) {
+      if (sent.length) sb.storage.from('fotos').remove(sent) // não deixa foto órfã
       setBusy(false)
-      toast('Deu ruim: ' + (e as Error).message)
+      toast('Não postou. ' + nice(e), 'err')
     }
   }
 
@@ -125,9 +145,9 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
       {step === 'cam' ? (
         <div className="cam">
           <div className="cam-top">
-            <button className="ib" onClick={close}>fechar</button>
+            <button className="ib" onClick={close}>Fechar</button>
             <span className="pill">{n}/3 fotos</span>
-            <button className="ib" onClick={() => { setStep('form'); hap(8) }}>{n ? 'próximo' : 'pular'}</button>
+            <button className={'ib' + (n ? ' g' : '')} onClick={() => { stopTimer(); setStep('form'); hap(8) }}>{n ? 'Próximo' : 'Pular'}</button>
           </div>
 
           <div className="frame" style={{ aspectRatio: ratio }}>
@@ -138,12 +158,15 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
             <svg viewBox="0 0 200 400" className="outline" aria-hidden="true"><circle cx="100" cy="50" r="23" /><path d={BODY} /></svg>
             {shots[angle] && <img src={shots[angle]!.url} className="taken" alt="" />}
             {count > 0 && <div className="count" key={count}>{count}</div>}
-            {err && <div className="err">Câmera falhou: {err}<br />Usa o botão “galeria”.</div>}
+            {err && <div className="err">{err}</div>}
           </div>
 
           {ghost && (
-            <input type="range" className="fade" aria-label="Força do fantasma" min={0.15} max={0.9} step={0.05} value={go}
-              onChange={e => { const v = +e.target.value; setGo(v); hap(5); try { localStorage.setItem('frango.go', String(v)) } catch { /* */ } }} />
+            <label className="ghost-ctl">
+              <span>Fantasma</span>
+              <input type="range" className="fade" min={0.15} max={0.9} step={0.05} value={go}
+                onChange={e => { const v = +e.target.value; setGo(v); hap(5); try { localStorage.setItem('frango.go', String(v)) } catch { /* */ } }} />
+            </label>
           )}
 
           <div className="chips">
@@ -153,29 +176,31 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
           <div className="row">
             <label className="ib">
               <input type="file" accept="image/*" onChange={native} hidden />
-              galeria
+              Galeria
             </label>
-            <button className="shoot" onClick={countdown} aria-label="Tirar foto" disabled={count > 0} />
-            <button className="ib" onClick={() => { setFacing(f => (f === 'user' ? 'environment' : 'user')); hap(8) }}>virar</button>
+            <button className="shoot" onClick={countdown} aria-label="Tirar foto" disabled={count > 0 || !!err} />
+            <button className="ib" onClick={() => { stopTimer(); setFacing(f => (f === 'user' ? 'environment' : 'user')); hap(8) }}>Virar</button>
           </div>
         </div>
       ) : (
         <div className="sheet">
           <div className="cam-top">
-            <button className="ib" onClick={() => setStep('cam')}>← fotos</button>
-            <span className="pill">check-in</span>
-            <button className="ib" onClick={close}>fechar</button>
+            <button className="ib" onClick={() => setStep('cam')}>← Fotos</button>
+            <span className="pill">Check-in</span>
+            <button className="ib" onClick={close}>Fechar</button>
           </div>
           {n > 0 && <div className="thumbs">{ANGLES.map(a => shots[a] && <img key={a} src={shots[a]!.url} alt={a} />)}</div>}
-          <h2 className="h">Peso de hoje</h2>
+          <h2 className="h center">Peso de hoje</h2>
           <Ruler value={weight} onChange={setWeight} />
-          {lastW != null && <p className="hint">{weight - lastW === 0 ? 'igual à última' : `${weight - lastW > 0 ? '+' : ''}${(weight - lastW).toFixed(1).replace('.', ',')} kg desde a última`}</p>}
+          {lastW != null && <p className="hint center">{weight - lastW === 0 ? 'Igual à última.' : `${weight - lastW > 0 ? '+' : ''}${(weight - lastW).toFixed(1).replace('.', ',')} kg desde a última.`}</p>}
           <h2 className="h">Como foi a semana?</h2>
           <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Supino 70, dieta ok, churrasco no sábado…" maxLength={280} rows={3} />
-          <Hold label="Segura pra postar" onDone={post} busy={busy} />
+          <div className="hold-dock">
+            <Hold label="Segura pra postar" onDone={post} busy={busy} />
+          </div>
         </div>
       )}
-      {crop && <Cropper src={crop} aspect={3 / 4} outW={1200} title={`ajustar · ${angle}`} onDone={addShot} onCancel={() => setCrop(null)} />}
+      {crop && <Cropper src={crop} aspect={3 / 4} outW={1200} title={`Ajustar · ${angle}`} onDone={addShot} onCancel={() => setCrop(null)} />}
     </div>
   )
 }

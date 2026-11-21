@@ -1,21 +1,51 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { hap } from './lib'
+import { hap, gesture } from './lib'
 
-// antes/depois arrastável
+// ---- botão "voltar" do Android/gesto do iPhone fecha o que está aberto (sheet, editor, check-in) em vez de sair do app
+// Nunca chama history.back() sozinho (isso pode tirar a pessoa do app). Fechou pelo botão do app →
+// a entrada vira "sobra" e é reaproveitada pelo próximo painel que abrir.
+const stack: { close: () => void }[] = []
+addEventListener('popstate', () => { stack.at(-1)?.close() })
+export function useBack(onClose: () => void) {
+  const cb = useRef(onClose)
+  useLayoutEffect(() => { cb.current = onClose })
+  useEffect(() => {
+    const entry = { close: () => { const i = stack.indexOf(entry); if (i >= 0) stack.splice(i, 1); cb.current() } }
+    stack.push(entry)
+    if ((history.state as { frango?: string } | null)?.frango === 'sobra') history.replaceState({ frango: 'aberto' }, '')
+    else history.pushState({ frango: 'aberto' }, '')
+    return () => {
+      const i = stack.indexOf(entry)
+      if (i >= 0) { stack.splice(i, 1); history.replaceState({ frango: 'sobra' }, '') } // fechou pelo app, não pelo voltar
+    }
+  }, [])
+}
+
+// ---- antes/depois: só arrasta pela alça (±30px da linha). Fora dela o dedo rola a página ou troca de aba.
 export function Compare({ before, after, a = 'antes', b = 'agora' }: { before?: string; after?: string; a?: string; b?: string }) {
   const [x, setX] = useState(50)
+  const [drag, setDrag] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const last = useRef(50)
-  function move(e: React.PointerEvent) {
+  const pos = (cx: number) => { const r = box.current!.getBoundingClientRect(); return Math.max(0, Math.min(100, ((cx - r.left) / r.width) * 100)) }
+  function down(e: React.PointerEvent) {
     const r = box.current!.getBoundingClientRect()
-    const v = Math.max(0, Math.min(100, ((e.clientX - r.left) / r.width) * 100))
-    if (Math.abs(v - last.current) > 8) { hap(4); last.current = v }
+    if (Math.abs(e.clientX - (r.left + (r.width * x) / 100)) > 30) return // longe da alça: não é comigo
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    gesture.lock = true
+    setDrag(true); hap(6)
+  }
+  function move(e: React.PointerEvent) {
+    if (!drag) return
+    const v = pos(e.clientX)
+    if (Math.abs(v - last.current) > 8) { hap(3); last.current = v }
     setX(v)
   }
+  function up() { if (drag) { setDrag(false); gesture.lock = false } }
   if (!before || !after) return <div className="cmp empty">{after || before ? <img src={after || before} alt="" /> : <span>sem foto</span>}</div>
   return (
-    <div className="cmp" ref={box} onPointerDown={e => { (e.target as Element).setPointerCapture?.(e.pointerId); move(e) }} onPointerMove={e => e.buttons && move(e)}>
+    <div className={'cmp' + (drag ? ' drag' : '')} ref={box} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
       <img src={after} alt="" draggable={false} />
       <img src={before} alt="" draggable={false} style={{ clipPath: `inset(0 ${100 - x}% 0 0)` }} />
       <i className="bar" style={{ left: `${x}%` }}><b /></i>
@@ -24,7 +54,7 @@ export function Compare({ before, after, a = 'antes', b = 'agora' }: { before?: 
   )
 }
 
-// controle segmentado com lente que escorrega
+// ---- controle segmentado com lente que escorrega
 export function Seg<T extends string>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
   const i = options.findIndex(o => o[0] === value)
   return (
@@ -37,7 +67,7 @@ export function Seg<T extends string>({ value, options, onChange }: { value: T; 
   )
 }
 
-// régua de peso: arrasta e vibra a cada 0,1 kg
+// ---- régua de peso: arrasta e vibra a cada 0,1 kg
 const MIN = 40, MAX = 160, PX = 10
 export function Ruler({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const el = useRef<HTMLDivElement>(null)
@@ -60,10 +90,11 @@ export function Ruler({ value, onChange }: { value: number; onChange: (v: number
   )
 }
 
-// segurar pra confirmar
+// ---- segurar pra confirmar (texto em 2 camadas: branco por baixo, escuro por cima recortado no progresso)
 export function Hold({ label, onDone, busy }: { label: string; onDone: () => void; busy?: boolean }) {
   const [p, setP] = useState(0)
   const raf = useRef(0)
+  useEffect(() => { if (!busy) setP(0) }, [busy]) // deu erro / terminou: destrava
   function down() {
     if (busy) return
     const t0 = performance.now()
@@ -78,34 +109,55 @@ export function Hold({ label, onDone, busy }: { label: string; onDone: () => voi
   }
   function up() { cancelAnimationFrame(raf.current); if (p < 1) setP(0) }
   useEffect(() => () => cancelAnimationFrame(raf.current), [])
+  const shown = busy ? 1 : p
+  const txt = busy ? 'postando…' : p > 0 ? 'segura…' : label
   return (
     <button className="hold" onPointerDown={down} onPointerUp={up} onPointerLeave={up} onPointerCancel={up} onContextMenu={e => e.preventDefault()}>
-      <i style={{ transform: `scaleX(${busy ? 1 : p})` }} />
-      <span>{busy ? 'postando…' : p > 0 ? 'segura…' : label}</span>
+      <i style={{ transform: `scaleX(${shown})` }} />
+      <span>{txt}</span>
+      <span className="ink" aria-hidden="true" style={{ clipPath: `inset(0 ${100 - shown * 100}% 0 0)` }}>{txt}</span>
     </button>
   )
 }
 
-export function Avatar({ name, me, src }: { name: string; me?: boolean; src?: string }) {
-  return <span className={'av' + (me ? ' me' : '')}>{src ? <img src={src} alt="" /> : name[0]}</span>
+export function Avatar({ name, mine, src, size = 28 }: { name: string; mine?: boolean; src?: string; size?: number }) {
+  return (
+    <span className={'av' + (mine ? ' mine' : '')} style={{ width: size, height: size, fontSize: size * 0.45 }}>
+      {src ? <img src={src} alt="" /> : name[0]}
+    </span>
+  )
 }
 
-// sheet de baixo que arrasta pra fechar
+// ---- sheet de baixo: arrasta pela alça pra fechar; o conteúdo rola normalmente
 export function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   const [y, setY] = useState(0)
   const start = useRef<number | null>(null)
   const downOnBg = useRef(false) // só fecha se o toque começou no fundo (evita o "clique fantasma" do toque que abriu)
-  // portal: fora da tela animada, senão a barra de abas fica por cima
+  useBack(onClose)
   return createPortal(
     <div className="sheet-bg" onPointerDown={e => { downOnBg.current = e.target === e.currentTarget }} onClick={e => { if (downOnBg.current && e.target === e.currentTarget) onClose() }}>
-      <div className="sheet-card" onClick={e => e.stopPropagation()} style={{ transform: y ? `translateY(${y}px)` : undefined, transition: start.current == null ? undefined : 'none' }}
-        onPointerDown={e => { if ((e.target as Element).closest('.grab')) { start.current = e.clientY; (e.target as Element).setPointerCapture?.(e.pointerId) } }}
-        onPointerMove={e => { if (start.current != null) setY(Math.max(0, e.clientY - start.current)) }}
-        onPointerUp={() => { if (start.current == null) return; start.current = null; if (y > 90) { hap(8); onClose() } setY(0) }}>
-        <i className="grab" />
+      <div className="sheet-card" onClick={e => e.stopPropagation()} style={{ transform: y ? `translateY(${y}px)` : undefined, transition: start.current == null ? undefined : 'none' }}>
+        <i className="grab"
+          onPointerDown={e => { start.current = e.clientY; e.currentTarget.setPointerCapture?.(e.pointerId) }}
+          onPointerMove={e => { if (start.current != null) setY(Math.max(0, e.clientY - start.current)) }}
+          onPointerUp={() => { if (start.current == null) return; start.current = null; if (y > 90) { hap(8); onClose() } setY(0) }} />
         {children}
       </div>
     </div>,
     document.body,
+  )
+}
+
+// ---- pergunta de confirmação
+export function Confirm({ title, text, yes, onYes, onClose }: { title: string; text: string; yes: string; onYes: () => void; onClose: () => void }) {
+  return (
+    <Sheet onClose={onClose}>
+      <div className="confirm">
+        <h3 className="sheet-h">{title}</h3>
+        <p className="hint">{text}</p>
+        <button className="btn big danger" onClick={() => { hap(12); onYes() }}>{yes}</button>
+        <button className="later" onClick={onClose}>cancelar</button>
+      </div>
+    </Sheet>
   )
 }

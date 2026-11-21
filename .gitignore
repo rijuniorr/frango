@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+qa/verifica/
+qa/bugs/saida-v07.txt

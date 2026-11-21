@@ -37,11 +37,29 @@ export type Data = {
 
 export const avatarOf = (data: Data, uid: string) => { const a = data.profiles.find(p => p.id === uid)?.avatar; return a ? data.urls[a] : undefined }
 
+// componente que está usando o dedo (antes/depois, gráfico, régua…) trava o deslizar entre abas
+export const gesture = { lock: false }
+
+// erro técnico → frase de gente
+export function nice(e: unknown): string {
+  const m = String((e as { message?: string })?.message ?? e)
+  if (/fetch|network|Load failed|offline/i.test(m)) return 'Sem internet. Tenta de novo quando voltar.'
+  if (/row-level|permission|401|403|JWT/i.test(m)) return 'Sem permissão. Sai e entra de novo.'
+  if (/formato|decode|HEI[CF]/i.test(m)) return 'Não deu pra abrir essa foto. Se for HEIC, muda a câmera pra JPEG ou tira um print.'
+  if (/NotAllowed|Permission denied/i.test(m)) return 'O app não tem permissão pra câmera. Libera nas configurações ou usa a galeria.'
+  if (/NotFound|NotReadable|not supported|Not supported/i.test(m)) return 'Não deu pra abrir a câmera. Usa a galeria.'
+  return 'Deu ruim. Tenta de novo.'
+}
+
 // foto → JPEG com lado maior `max`
 export function shrink(src: Blob, max: number, square = false): Promise<Blob> {
   return new Promise((res, rej) => {
     const img = new Image()
+    const u = URL.createObjectURL(src)
+    img.onerror = () => { URL.revokeObjectURL(u); rej(new Error('formato')) }
     img.onload = () => {
+      URL.revokeObjectURL(u)
+      if (!img.width) return rej(new Error('formato'))
       const s = square ? Math.min(img.width, img.height) : 0
       const k = Math.min(1, max / (square ? s : Math.max(img.width, img.height)))
       const cv = document.createElement('canvas')
@@ -49,10 +67,9 @@ export function shrink(src: Blob, max: number, square = false): Promise<Blob> {
       const g = cv.getContext('2d')!
       if (square) g.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, cv.width, cv.height)
       else g.drawImage(img, 0, 0, cv.width, cv.height)
-      cv.toBlob(b => (b ? res(b) : rej(new Error('foto'))), 'image/jpeg', 0.85)
+      cv.toBlob(b => (b ? res(b) : rej(new Error('formato'))), 'image/jpeg', 0.85)
     }
-    img.onerror = rej
-    img.src = URL.createObjectURL(src)
+    img.src = u
   })
 }
 
@@ -68,11 +85,13 @@ export function monday(d = new Date()) {
   x.setDate(x.getDate() - ((x.getDay() + 6) % 7))
   return x
 }
+export const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n)
 export function weekDays(d = new Date()) {
   const m = monday(d)
   return Array.from({ length: 7 }, (_, i) => iso(new Date(m.getFullYear(), m.getMonth(), m.getDate() + i)))
 }
 export const fmtKg = (n: number | null | undefined) => (n == null ? '—' : n.toFixed(1).replace('.', ','))
+export const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 export const fmtDate = (s: string) => new Date(s + (s.length === 10 ? 'T12:00' : '')).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')
 
 // vibração: Android = navigator.vibrate; iPhone (iOS 18+) = clique num <input switch>
@@ -84,6 +103,8 @@ export function hap(ms: number | number[] = 12) {
   if (navigator.vibrate) navigator.vibrate(ms)
   else sw.click()
 }
+
+const signed = new Map<string, { url: string; t: number }>()
 
 export async function load(me: string): Promise<Data> {
   const since = iso(new Date(Date.now() - 400 * 864e5))
@@ -98,11 +119,15 @@ export async function load(me: string): Promise<Data> {
   const checkins = (c.data ?? []) as Checkin[]
   const profiles = (p.data ?? []) as Profile[]
   const paths = [...checkins.flatMap(x => Object.values(x.photos)), ...profiles.map(x => x.avatar)].filter(Boolean) as string[]
-  const urls: Record<string, string> = {}
-  if (paths.length) {
-    const { data } = await sb.storage.from('fotos').createSignedUrls(paths, 60 * 60 * 6)
-    data?.forEach(x => { if (x.path && x.signedUrl) urls[x.path] = x.signedUrl })
+  // links assinados valem 6h: reaproveita os que têm menos de 5h (senão toda foto baixa de novo e pisca)
+  const now = Date.now()
+  const need = paths.filter(x => !signed.has(x) || now - signed.get(x)!.t > 5 * 3600e3)
+  if (need.length) {
+    const { data } = await sb.storage.from('fotos').createSignedUrls(need, 60 * 60 * 6)
+    data?.forEach(x => { if (x.path && x.signedUrl) signed.set(x.path, { url: x.signedUrl, t: now }) })
   }
+  const urls: Record<string, string> = {}
+  paths.forEach(x => { const s = signed.get(x); if (s) urls[x] = s.url })
   return {
     me,
     profiles,

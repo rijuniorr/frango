@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { sb, emailOf, passOf, hap } from './lib'
+import { sb, emailOf, passOf, hap, nice } from './lib'
 
 export default function Login() {
   const [user, setUser] = useState('')
@@ -13,18 +13,19 @@ export default function Login() {
     if (!u || !pin) return
     setBusy(true); setErr('')
     const email = emailOf(u), password = passOf(pin)
-    let { error } = await sb.auth.signInWithPassword({ email, password })
-    // primeiro acesso: a conta nasce aqui (o banco só aceita ricardo e gabriel)
-    if (error?.message.includes('Invalid login')) {
-      const r = await sb.auth.signUp({ email, password })
-      if (r.error?.message.includes('already registered')) error = { ...error, message: 'senha' } as typeof error
-      else error = r.error
-    }
+    let msg = ''
+    try {
+      const { error } = await sb.auth.signInWithPassword({ email, password })
+      // primeiro acesso: a conta nasce aqui (o banco só aceita ricardo e gabriel)
+      if (error?.message.includes('Invalid login')) {
+        const r = await sb.auth.signUp({ email, password })
+        if (r.error?.message.includes('already registered')) msg = 'Senha errada.'
+        else if (r.error) msg = /cadastro fechado|Database error/.test(r.error.message) ? 'Esse usuário não existe. Só ricardo e gabriel.' : nice(r.error)
+        else if (!r.data.session) msg = 'Conta criada, mas o login precisa de confirmação no Supabase.'
+      } else if (error) msg = nice(error)
+    } catch (er) { msg = nice(er) }
     setBusy(false)
-    if (error) {
-      hap([40, 40, 40])
-      setErr(error.message === 'senha' ? 'Senha errada.' : error.message.includes('cadastro fechado') || error.message.includes('Database error') ? 'Esse usuário não existe. Só Ricardo e Gabriel.' : error.message)
-    } else hap(30)
+    if (msg) { hap([40, 40, 40]); setErr(msg) } else hap(30)
   }
 
   return (
@@ -40,7 +41,7 @@ export default function Login() {
       </label>
       <label className="field">
         <span>Senha</span>
-        <input value={pin} onChange={e => setPin(e.target.value)} type="password" inputMode="numeric" autoComplete="current-password" placeholder="•••" />
+        <input value={pin} onChange={e => setPin(e.target.value)} type="password" inputMode="numeric" autoComplete="current-password" placeholder="tua senha" enterKeyHint="go" />
       </label>
       {err && <p className="err-msg">{err}</p>}
       <button className="btn big" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
