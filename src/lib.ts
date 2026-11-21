@@ -118,7 +118,7 @@ export async function load(me: string): Promise<Data> {
   ])
   const checkins = (c.data ?? []) as Checkin[]
   const profiles = (p.data ?? []) as Profile[]
-  const paths = [...checkins.flatMap(x => Object.values(x.photos).filter(v => typeof v === 'string').filter(v => typeof v === 'string')), ...profiles.map(x => x.avatar)].filter(Boolean) as string[]
+  const paths = [...checkins.flatMap(x => Object.values(x.photos).filter(v => typeof v === 'string')), ...profiles.map(x => x.avatar)].filter(Boolean) as string[]
   // links assinados valem 6h: reaproveita os que têm menos de 5h (senão toda foto baixa de novo e pisca)
   const now = Date.now()
   const need = paths.filter(x => !signed.has(x) || now - signed.get(x)!.t > 5 * 3600e3)
