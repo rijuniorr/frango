@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { Ctx } from './App'
 import { sb, hap, fmtKg, fmtDate, iso, monday, weekStats, avatarOf, nice, ANGLES, type Angle, type Checkin } from './lib'
-import { Compare, Avatar } from './ui'
+import { Compare, Avatar, Confirm } from './ui'
 
 const DOW = ['S', 'T', 'Q', 'Q', 'S', 'S', 'D']
 
@@ -71,6 +71,7 @@ function Post({ c, data, mutate, toast }: { c: Checkin } & Ctx) {
   const [burst, setBurst] = useState(0)
   const busy = useRef(false)
   const [sending, setSending] = useState(false)
+  const [del, setDel] = useState(false)
   const p = data.profiles.find(x => x.id === c.user_id)
   const hist = data.checkins.filter(x => x.user_id === c.user_id)
   const i = hist.findIndex(x => x.id === c.id)
@@ -113,11 +114,25 @@ function Post({ c, data, mutate, toast }: { c: Checkin } & Ctx) {
     mutate(d => ({ ...d, comments: [...d.comments, row] }))
   }
 
+  // excluir o próprio post: apaga as fotos do armazenamento e a linha (curtidas/comentários vão junto)
+  async function remove() {
+    setDel(false); hap([20, 30, 20])
+    const before = data.checkins
+    mutate(d => ({ ...d, checkins: d.checkins.filter(x => x.id !== c.id) }))
+    const { error } = await sb.from('checkins').delete().eq('id', c.id)
+    if (error) { mutate(d => ({ ...d, checkins: before })); return toast('Não excluiu. ' + nice(error), 'err') }
+    const paths = ANGLES.map(a => c.photos[a]).filter((v): v is string => typeof v === 'string')
+    if (paths.length) sb.storage.from('fotos').remove(paths)
+    toast('Post excluído.')
+  }
+
   return (
     <article className="card post">
+      {del && <Confirm title="Excluir esse post?" text="As fotos, o peso, curtidas e comentários desse check-in somem pra sempre." yes="Excluir" onYes={remove} onClose={() => setDel(false)} />}
       <div className="post-top">
         <Avatar name={p?.name ?? '?'} mine={c.user_id === data.me} src={avatarOf(data, c.user_id)} size={36} />
         <div><b>{p?.name}</b><span>Semana de {fmtDate(c.week)} · check-in {i + 1}{c.photos.tag ? (c.photos.tag === 'pre' ? ' · pré-treino' : ' · pós-treino') : ''}</span></div>
+        {c.user_id === data.me && <button className="post-del" onClick={() => { setDel(true); hap(8) }} aria-label="Excluir post"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" /></svg></button>}
       </div>
 
       {angles.length > 0 && (
