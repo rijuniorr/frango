@@ -471,3 +471,15 @@ img { display: block; }
 .ios-arrow svg { width: 22px; height: 22px; fill: none; stroke: var(--g-ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 @keyframes point { 50% { transform: translateY(8px) } }
 .arrow-room { display: block; height: 48px; }
+
+/* ---- nível (giroscópio) ---- */
+.level { position: absolute; top: 14px; right: 14px; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .7); background: rgba(0, 0, 0, .45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: grid; place-items: center; pointer-events: none; }
+.level::before { content: ''; position: absolute; width: 18px; height: 18px; border-radius: 50%; border: 1.5px dashed rgba(255, 255, 255, .5); }
+.level i { width: 14px; height: 14px; border-radius: 50%; background: #ffb020; box-shadow: 0 0 10px rgba(255, 176, 32, .8); transition: transform .08s linear; }
+.level.ok { border-color: var(--g); box-shadow: 0 0 20px rgba(30, 255, 122, .5); }
+.level.ok i { background: var(--g); box-shadow: 0 0 12px var(--g); }
+.level-hint { font-size: 13px; color: var(--mut); text-align: center; min-height: 20px; margin: -6px 0 -8px; }
+.level-hint.ok { color: var(--g); }
+.level-hint .wk { min-height: 32px; color: var(--g); font-size: 13px; }
+.timer-chips button { min-height: 36px; padding: 0 14px; }
+.timer-chips button { text-transform: none; }

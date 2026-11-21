@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Ctx } from './App'
 import { sb, hap, iso, monday, shrink, nice, ANGLES, type Angle } from './lib'
-import { Ruler, Hold, useBack } from './ui'
+import { Ruler, Hold, useBack, Sheet } from './ui'
+import { useTilt, isLevel, tiltHint, askMotion, unlockAudio, beep } from './level'
 import { nowWeight } from './Feed'
 import Cropper from './Cropper'
 
@@ -31,7 +32,25 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   const [note, setNote] = useState(existing?.note ?? '')
   const [busy, setBusy] = useState(false)
   const [crop, setCrop] = useState<string | null>(null)
+  const [secs, setSecs] = useState(() => { try { return +(localStorage.getItem('frango.timer') ?? 10) } catch { return 10 } })
+  const [motion, setMotion] = useState(false)
+  const [tips, setTips] = useState(() => { try { return !localStorage.getItem('frango.dicas') } catch { return false } })
+  const tilt = useTilt(motion && step === 'cam')
+  const level = isLevel(tilt)
+  const wasLevel = useRef(false)
   useBack(close)
+
+  // bip curto quando o celular fica no nível
+  useEffect(() => {
+    if (level && !wasLevel.current) { beep(1320, 90); hap(15) }
+    wasLevel.current = level
+  }, [level])
+
+  // liga nível + som (iPhone exige que seja dentro de um toque)
+  async function enableSensors() {
+    unlockAudio()
+    if (!motion) { await askMotion(); setMotion(true) } // mesmo se recusar, escuta: se nada chegar, o aviso explica
+  }
 
   // fantasma = última foto sua desse ângulo (de outra semana)
   const prevPath = [...mine].reverse().find(x => x.photos[angle] && x.week !== week)?.photos[angle]
@@ -88,15 +107,20 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
     if (next) setTimeout(() => setAngle(next), 450)
   }
 
-  function countdown() {
+  async function countdown() {
     if (timer.current || err) return
-    let n = 3
-    setCount(n); hap()
+    await enableSensors()
+    let n = secs
+    setCount(n); hap(); beep(660)
     timer.current = window.setInterval(() => {
       n--
-      if (n === 0) { stopTimer(); grab() }
-      else { setCount(n); hap() }
+      if (n === 0) { stopTimer(); beep(1320, 220, 0.25); grab() }
+      else { setCount(n); hap(); beep(n <= 3 ? 990 : 660) }
     }, 1000)
+  }
+  function pickSecs(s: number) {
+    setSecs(s); hap(6)
+    try { localStorage.setItem('frango.timer', String(s)) } catch { /* */ }
   }
 
   // galeria ou câmera nativa do celular → editor
@@ -157,8 +181,21 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
             {ghost && <img src={ghost} className="ghost" alt="" style={{ opacity: go }} />}
             <svg viewBox="0 0 200 400" className="outline" aria-hidden="true"><circle cx="100" cy="50" r="23" /><path d={BODY} /></svg>
             {shots[angle] && <img src={shots[angle]!.url} className="taken" alt="" />}
+            {motion && tilt && (
+              <div className={'level' + (level ? ' ok' : '')} aria-label={tiltHint(tilt)}>
+                <i style={{ transform: `translate(${Math.max(-26, Math.min(26, tilt.roll * 3))}px, ${Math.max(-26, Math.min(26, tilt.pitch * 3))}px)` }} />
+              </div>
+            )}
             {count > 0 && <div className="count" key={count}>{count}</div>}
             {err && <div className="err">{err}</div>}
+          </div>
+
+          <p className={'level-hint' + (level ? ' ok' : '')}>
+            {!motion ? <button className="wk" onClick={enableSensors}>Ligar o nível (giroscópio)</button> : tilt ? tiltHint(tilt) : 'Esse celular não mandou o nível.'}
+            {' · '}<button className="wk" onClick={() => { setTips(true); hap(6) }}>Dicas de posição</button>
+          </p>
+          <div className="chips timer-chips" aria-label="Timer">
+            {[3, 5, 10].map(s => <button key={s} className={s === secs ? 'on' : ''} onClick={() => pickSecs(s)}>{s}s</button>)}
           </div>
 
           {ghost && (
@@ -199,6 +236,19 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
             <Hold label="Segura pra postar" onDone={post} busy={busy} />
           </div>
         </div>
+      )}
+      {tips && (
+        <Sheet onClose={() => { setTips(false); try { localStorage.setItem('frango.dicas', '1') } catch { /* */ } }}>
+          <h3 className="sheet-h">Foto igual toda semana</h3>
+          <ol className="steps">
+            <li><span className="n">1</span><span><b>Celular em pé e reto</b>, apoiado ou preso na parede (fita serve). Usa o nível: bolha verde no meio.</span></li>
+            <li><span className="n">2</span><span><b>Altura do umbigo / logo abaixo do peito.</b> Mais baixo estica as pernas, mais alto aumenta a cabeça.</span></li>
+            <li><span className="n">3</span><span><b>2 a 3 metros</b> de distância, corpo inteiro no contorno. Câmera <b>1x</b>, nunca a grande-angular (0,5x).</span></li>
+            <li><span className="n">4</span><span><b>Sempre o mesmo lugar, a mesma luz e a mesma hora</b> (segunda de manhã, em jejum). Luz de frente, não de trás.</span></li>
+            <li><span className="n">5</span><span>Marca no chão onde ficam teus pés e onde fica o celular. Assim as fotos saem iguais.</span></li>
+          </ol>
+          <button className="btn big" onClick={() => { setTips(false); try { localStorage.setItem('frango.dicas', '1') } catch { /* */ } enableSensors() }}>Entendi, ligar o nível</button>
+        </Sheet>
       )}
       {crop && <Cropper src={crop} aspect={3 / 4} outW={1200} title={`Ajustar · ${angle}`} onDone={addShot} onCancel={() => setCrop(null)} />}
     </div>
