@@ -32,7 +32,8 @@ export default function App() {
   const [dir, setDir] = useState(0) // -1 veio da esquerda, 1 da direita
   const [cam, setCam] = useState(false)
   const [msg, setMsg] = useState<{ text: string; kind: 'ok' | 'roast'; id: number } | null>(null)
-  const touch = useRef<{ x: number; y: number; t: number } | null>(null)
+  const touch = useRef<{ x: number; y: number; t: number; axis: '' | 'x' | 'y' } | null>(null)
+  const mainEl = useRef<HTMLElement>(null)
 
   useEffect(() => {
     if (import.meta.env.DEV && location.search.includes('demo')) {
@@ -77,21 +78,44 @@ export default function App() {
     setDir(b > a ? 1 : -1); setTab(k); hap(8); scrollTo(0, 0)
   }
 
-  // deslizar o dedo pro lado troca de aba (menos em cima de slider, régua, gráfico…)
+  // deslizar o dedo pro lado troca de aba: a tela segue o dedo e volta com mola se não passar do ponto.
+  // a página em si nunca rola na horizontal (CSS: overflow-x clip + touch-action pan-y)
   function onTouchStart(e: React.TouchEvent) {
     const el = e.target as Element
-    if (el.closest('.cmp, .chart svg, input, textarea, .days, .seg, .replay')) { touch.current = null; return }
-    touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() }
+    if (e.touches.length > 1 || el.closest('.cmp, .chart svg, input, textarea, .days, .seg, .replay, .ruler')) { touch.current = null; return }
+    touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now(), axis: '' }
+  }
+  function onTouchMove(e: React.TouchEvent) {
+    const s = touch.current, m = mainEl.current
+    if (!s || !m) return
+    const dx = e.touches[0].clientX - s.x, dy = e.touches[0].clientY - s.y
+    if (!s.axis) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return
+      s.axis = Math.abs(dx) > Math.abs(dy) * 1.3 ? 'x' : 'y' // decide uma vez; vertical = rolagem normal
+    }
+    if (s.axis !== 'x') return
+    const i = TABS.findIndex(t => t[0] === tab)
+    const edge = (dx > 0 && i === 0) || (dx < 0 && i === TABS.length - 1)
+    m.classList.add('dragging'); m.classList.remove('snap')
+    m.style.transform = `translateX(${dx * (edge ? 0.15 : 0.45)}px)`
+    m.style.opacity = String(1 - Math.min(0.35, Math.abs(dx) / 900))
   }
   function onTouchEnd(e: React.TouchEvent) {
-    const s = touch.current
+    const s = touch.current, m = mainEl.current
     touch.current = null
-    if (!s) return
-    const dx = e.changedTouches[0].clientX - s.x, dy = e.changedTouches[0].clientY - s.y
-    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6 || Date.now() - s.t > 600) return
+    if (!s || s.axis !== 'x' || !m) return
+    const dx = e.changedTouches[0].clientX - s.x
+    const fast = Math.abs(dx) / Math.max(1, Date.now() - s.t) > 0.5
     const i = TABS.findIndex(t => t[0] === tab) + (dx < 0 ? 1 : -1)
-    if (i >= 0 && i < TABS.length) go(TABS[i][0])
-    else hap(4)
+    m.classList.remove('dragging')
+    if ((Math.abs(dx) > 70 || (fast && Math.abs(dx) > 30)) && i >= 0 && i < TABS.length) {
+      m.style.transform = ''; m.style.opacity = ''
+      go(TABS[i][0])
+    } else {
+      m.classList.add('snap') // volta pro lugar
+      m.style.transform = ''; m.style.opacity = ''
+      if (i < 0 || i >= TABS.length) hap(4)
+    }
   }
 
   if (session === undefined) return <div className="splash"><span className="logo big">frango<i>.</i></span></div>
@@ -103,7 +127,7 @@ export default function App() {
 
   return (
     <>
-      <main className={'screen' + (dir > 0 ? ' from-r' : dir < 0 ? ' from-l' : '')} key={tab} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <main className={'screen' + (dir > 0 ? ' from-r' : dir < 0 ? ' from-l' : '')} key={tab} ref={mainEl} onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} onTouchCancel={onTouchEnd}>
         {tab === 'feed' && <Feed {...ctx} />}
         {tab === 'hoje' && <Hoje {...ctx} />}
         {tab === 'evo' && <Evolucao {...ctx} />}

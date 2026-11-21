@@ -18,9 +18,12 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+/* a página NUNCA anda pro lado: nada pode ficar mais largo que a tela, nem durante animação */
+html, body { width: 100%; max-width: 100%; overflow-x: hidden; overflow-x: clip; overscroll-behavior: none; touch-action: pan-y; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html { background: var(--bg); }
+#root { width: 100%; overflow-x: clip; }
 body {
-  color: var(--fg); font: 15px/1.4 Geist, system-ui, sans-serif; min-height: 100dvh; overscroll-behavior-y: none;
+  color: var(--fg); font: 15px/1.4 Geist, system-ui, sans-serif; min-height: 100dvh;
   background: radial-gradient(70% 45% at 0 0, rgba(30, 255, 122, .09), transparent 70%), radial-gradient(60% 40% at 100% 100%, rgba(30, 255, 122, .06), transparent 70%), var(--bg);
   background-attachment: fixed;
   -webkit-user-select: none; user-select: none;
@@ -78,8 +81,8 @@ img { display: block; }
   background: var(--glass); backdrop-filter: blur(22px) saturate(1.6); -webkit-backdrop-filter: blur(22px) saturate(1.6);
   border: 1px solid rgba(255, 255, 255, .1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 12px 40px rgba(0, 0, 0, .5);
 }
-.tabs { position: relative; display: grid; grid-template-columns: repeat(4, 62px); padding: 5px; border-radius: 99px; }
-.tabs .lens { position: absolute; top: 5px; bottom: 5px; left: 5px; width: 62px; border-radius: 99px; background: rgba(255, 255, 255, .12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .15); transform: translateX(calc(var(--i) * 62px)); transition: transform .5s var(--spring); }
+.tabs { --tw: min(62px, calc((100vw - 32px - 70px - 10px) / 4)); position: relative; display: grid; grid-template-columns: repeat(4, var(--tw)); padding: 5px; border-radius: 99px; }
+.tabs .lens { position: absolute; top: 5px; bottom: 5px; left: 5px; width: var(--tw); border-radius: 99px; background: rgba(255, 255, 255, .12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .15); transform: translateX(calc(var(--i) * var(--tw))); transition: transform .5s var(--spring); }
 .tabs button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 0 6px; color: var(--mut); transition: color .25s; }
 .tabs button.on { color: var(--fg); }
 .tabs svg, .fab svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
@@ -397,3 +400,14 @@ img { display: block; }
 .crop-box.round { overflow: hidden; border-radius: 20px; }
 .crop-box.round .grid { box-shadow: none; border: 0; border-radius: 20px; background: radial-gradient(circle closest-side, transparent calc(100% - 1px), rgba(255, 255, 255, .9) calc(100% - 1px) 100%, rgba(0, 0, 0, .72) 100%); }
 .login-logo { align-self: flex-start; object-fit: contain; }
+
+/* ---- v0.5: troca de aba sem quebrar ---- */
+.screen { width: 100%; touch-action: pan-y; will-change: transform; }
+.screen.from-r { animation: fromR .38s cubic-bezier(.2, .9, .3, 1) both; }
+.screen.from-l { animation: fromL .38s cubic-bezier(.2, .9, .3, 1) both; }
+@keyframes fromR { from { opacity: 0; transform: translateX(36px) } }
+@keyframes fromL { from { opacity: 0; transform: translateX(-36px) } }
+.screen.dragging { animation: none; transition: none; }
+.screen.snap { transition: transform .35s cubic-bezier(.2, .9, .3, 1), opacity .35s; }
+.tabs span { white-space: nowrap; font-size: min(10px, 2.6vw); }
+.dock { padding: 0 16px; }
