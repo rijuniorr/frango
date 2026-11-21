@@ -13,7 +13,7 @@ async function open(bt, vp, dbOk = false) {
   const ctx = await b.newContext({ viewport: vp, hasTouch: true, isMobile: bt === 'chromium', deviceScaleFactor: 2, serviceWorkers: 'block', locale: 'pt-BR' })
   // banco de produção nunca é tocado: tudo é respondido aqui (401 = recusa; dbOk = finge sucesso)
   await ctx.route(/supabase\.co/, r => r.fulfill(dbOk ? { status: 200, contentType: 'application/json', body: '{}' } : { status: 401, contentType: 'application/json', body: '{"message":"bot"}' }))
-  await ctx.addInitScript(() => { localStorage.setItem('frango.install.later', '9999999999999'); localStorage.setItem('frango.dicas2', '1'); localStorage.setItem('frango.dicas', '1') })
+  await ctx.addInitScript(() => { localStorage.setItem('frango.install.later', '9999999999999'); localStorage.setItem('frango.dicas3', '1'); localStorage.setItem('frango.dicas', '1') })
   const page = await ctx.newPage()
   const errs = []
   page.on('pageerror', e => errs.push(e.message))
@@ -173,7 +173,7 @@ for (const vp of [{ width: 320, height: 568 }, { width: 375, height: 667 }, { wi
   const b = await chromium.launch()
   const ctx = await b.newContext({ viewport: { width: 360, height: 780 }, hasTouch: true, isMobile: true, serviceWorkers: 'block', timezoneId: 'America/Sao_Paulo' })
   await ctx.route(/supabase\.co/, r => r.fulfill({ status: 401, body: '{}' }))
-  await ctx.addInitScript(() => { localStorage.setItem('frango.install.later', '9999999999999'); localStorage.setItem('frango.dicas2', '1'); localStorage.setItem('frango.dicas', '1') })
+  await ctx.addInitScript(() => { localStorage.setItem('frango.install.later', '9999999999999'); localStorage.setItem('frango.dicas3', '1'); localStorage.setItem('frango.dicas', '1') })
   const page = await ctx.newPage()
   await page.clock.install({ time: new Date('2026-11-22T23:58:30-03:00') }) // domingo
   await page.goto(URL_); await page.waitForSelector('.dock'); await page.waitForTimeout(500)

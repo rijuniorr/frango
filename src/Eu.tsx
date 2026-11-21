@@ -142,7 +142,7 @@ export default function Eu(ctx: Ctx) {
         {!standalone && <button onClick={() => { hap(8); dispatchEvent(new Event('frango:install')) }}>Instalar o app<span>›</span></button>}
         <button className="danger" onClick={() => { hap(10); setBye(true) }}>Sair da conta<span>›</span></button>
       </div>
-      <p className="ver">frangos · v1.3</p>
+      <p className="ver">frangos · v1.4</p>
 
       {crop && <Cropper src={crop} aspect={1} round outW={500} title="Foto de perfil" onDone={photo} onCancel={() => setCrop(null)} />}
       {bye && <Confirm title="Sair da conta?" text="Pra voltar é só entrar de novo com teu usuário e senha." yes="Sair" onYes={() => sb.auth.signOut()} onClose={() => setBye(false)} />}

@@ -6,8 +6,8 @@ export const sb = createClient(
   'sb_publishable_DvAYEDREa2_dJH608NeFiw_gTjrf1mX',
 )
 
-export type Angle = 'frente' | 'lado' | 'costas'
-export const ANGLES: Angle[] = ['frente', 'lado', 'costas']
+export type Angle = 'frente' | 'lado' | 'costas' | 'livre'
+export const ANGLES: Angle[] = ['frente', 'lado', 'costas', 'livre'] // livre = pose que quiser, timer de 10 s automático
 
 export type Profile = { id: string; username: string; name: string; is_admin: boolean; height_cm: number | null; goal_kg: number | null; weight_kg: number | null; fat_pct: number | null; avatar: string | null }
 export type Settings = { max_skips: number; max_junk: number }

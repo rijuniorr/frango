@@ -33,7 +33,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   const [note, setNote] = useState(existing?.note ?? '')
   const [busy, setBusy] = useState(false)
   const [crop, setCrop] = useState<string | null>(null)
-  const [tips, setTips] = useState(() => { try { return !localStorage.getItem('frango.dicas2') } catch { return false } })
+  const [tips, setTips] = useState(() => { try { return !localStorage.getItem('frango.dicas3') } catch { return false } })
   const [sense, setSense] = useState<{ score: number; hint: string; ok: boolean; on: number; live: Pose | null } | null>(null)
   const meta = useRef<Partial<Record<Angle, { pose: Pose | null; lum: number }>>>({})
   useBack(close)
@@ -59,7 +59,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
       raf = requestAnimationFrame(tick)
       const s = L.current, v = video.current
       if (!lmk || !v || v.readyState < 2 || !v.videoWidth) return
-      const paused = s.hold || s.done || now < pauseUntil.current
+      const paused = s.hold || s.done || s.angle === 'livre' || now < pauseUntil.current
       // som (todo frame, pro ritmo ficar certinho)
       if (paused || score < 0) tone(false)
       else if (score >= 50) tone(true)
@@ -77,7 +77,8 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
         const facing = votes.length >= 3 ? (['frente', 'lado', 'costas'] as Ang[]).sort((a, b) => votes.filter(x => x === b).length - votes.filter(x => x === a).length)[0] : null
         let r = easyScore(live, s.ref, mirror)
         // posição errada pra foto da vez (ex.: de frente na foto de lado): não aprova, bip lento e pede pra virar
-        if (r.score > 0 && facing && facing !== s.angle) r = { ...r, score: 6, ok: false, hint: turnHint(s.angle as Ang) }
+        const certo = s.angle === 'costas' ? facing !== 'lado' : facing === s.angle // de costas o detector às vezes "vê" rosto: vale corpo aberto
+        if (r.score > 0 && facing && !certo) r = { ...r, score: 6, ok: false, hint: turnHint(s.angle as Ang) }
         smooth = r.score === 0 ? 0 : smooth ? smooth * 0.6 + r.score * 0.4 : r.score // tira a tremida da nota
         score = Math.round(smooth)
         const ok = score >= 50
@@ -91,6 +92,12 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
     return () => { dead = true; cancelAnimationFrame(raf); tone(false); setSense(null) }
   }, [step, facing])
   useEffect(() => () => { releasePose(); tone(false) }, [])
+  // pose livre: 10 s sozinho, sem clicar em nada
+  useEffect(() => {
+    if (step !== 'cam' || angle !== 'livre' || shots.livre || err) return
+    const t = setTimeout(() => countdown(10), 1500)
+    return () => clearTimeout(t)
+  }, [angle, step]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopTimer = () => { clearInterval(timer.current); timer.current = 0; setCount(0) }
   useEffect(() => () => clearInterval(timer.current), [])
@@ -146,14 +153,14 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
     if (!rest.length) { setTimeout(() => setStep('form'), 900); return } // 3 fotos → peso e nota
     pauseUntil.current = performance.now() + PAUSE_MS
     setTimeout(() => setAngle(rest[0]), 700)
-    toast(`Agora de ${rest[0]}`)
+    toast(rest[0] === 'livre' ? 'Agora pose livre: 10 segundos' : `Agora de ${rest[0]}`)
   }
 
   // botão: 3-2-1 e foto (pra quem quer tirar na mão)
-  function countdown() {
+  function countdown(secs = 3) {
     unlockAudio()
     if (timer.current || err) return
-    let n = 3
+    let n = secs
     setCount(n); beep(1600, 90)
     timer.current = window.setInterval(() => {
       n--
@@ -206,7 +213,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   }
 
   const n = Object.keys(shots).length
-  const closeTips = () => { unlockAudio(); setTips(false); try { localStorage.setItem('frango.dicas2', '1') } catch { /* */ } }
+  const closeTips = () => { unlockAudio(); setTips(false); try { localStorage.setItem('frango.dicas3', '1') } catch { /* */ } }
 
   return (
     <div className="overlay">
@@ -214,7 +221,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
         <div className="cam" onPointerDown={unlockAudio}>
           <div className="cam-top">
             <button className="ib" onClick={close}>Fechar</button>
-            <span className="pill">{n}/3 fotos</span>
+            <span className="pill">{n}/{ANGLES.length} fotos</span>
             <button className={'ib' + (n ? ' g' : '')} onClick={() => { stopTimer(); setStep('form'); hap(8) }}>{n ? 'Próximo' : 'Pular'}</button>
           </div>
 
@@ -225,7 +232,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
             {!refPose && angle === 'frente' && <svg viewBox="0 0 200 400" className="outline" aria-hidden="true"><circle cx="100" cy="50" r="23" /><path d={BODY} /></svg>}
             <svg viewBox="0 0 300 400" className="skel" aria-hidden="true">
               <line x1="150" y1="0" x2="150" y2="400" className="center" />
-              {refPose && <Skel pose={refPose} cls="ref" />}
+              {refPose && angle !== 'livre' && <Skel pose={refPose} cls="ref" />}
               {sense?.live && <Skel pose={sense.live} cls={'live' + (sense.ok ? ' ok' : '')} />}
             </svg>
             {shots[angle] && <img src={shots[angle]!.url} className="taken" alt="" />}
@@ -235,9 +242,9 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
 
           {/* status: uma frase grande + barra que enche conforme encaixa */}
           <div className={'radar' + (sense?.ok ? ' ok' : '')}>
-            <b>{sense ? (shots[angle] ? '✓ Foto tirada' : sense.hint) : 'Carregando o sensor…'}</b>
+            <b>{shots[angle] ? '✓ Foto tirada' : angle === 'livre' ? (count ? `Faz a pose! ${count}…` : 'Pose livre: faz a pose que quiser') : sense ? sense.hint : 'Carregando o sensor…'}</b>
             <i><u style={{ width: `${sense ? (sense.ok ? 100 : sense.score * 2) : 0}%` }} /></i>
-            {sense?.ok && !shots[angle] && <small>Tirando em {Math.ceil(3 - sense.on * 3)}…</small>}
+            {sense?.ok && angle !== 'livre' && !shots[angle] && <small>Tirando em {Math.ceil(3 - sense.on * 3)}…</small>}
           </div>
 
           <div className="chips">
@@ -249,7 +256,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
               <input type="file" accept="image/*" onChange={native} hidden />
               Galeria
             </label>
-            <button className="shoot" onClick={countdown} aria-label="Tirar foto agora" disabled={count > 0 || !!err} />
+            <button className="shoot" onClick={() => countdown(angle === 'livre' ? 10 : 3)} aria-label="Tirar foto agora" disabled={count > 0 || !!err} />
             <button className="ib" onClick={() => { stopTimer(); setFacing(f => (f === 'user' ? 'environment' : 'user')); hap(8) }}>Virar</button>
           </div>
           <button className="wk" onClick={() => { setTips(true); hap(6) }}>Como funciona?</button>
@@ -280,6 +287,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
             <li><span className="n">2</span><span><b>Afasta e se encaixa no contorno.</b> Não precisa aparecer o pé: ombro e quadril bastam.</span></li>
             <li><span className="n">3</span><span><b>Bip lento = longe. Bip rápido = quase.</b> Bip contínuo = certo: fica parado 3 segundos e a foto sai sozinha.</span></li>
             <li><span className="n">4</span><span>Aí <b>vira de lado</b>, depois <b>de costas</b>. Mesma coisa. As semanas seguintes usam a 1ª foto como referência.</span></li>
+            <li><span className="n">5</span><span>Por último, <b>pose livre</b>: o timer de 10 s começa sozinho. Faz a pose que quiser (bíceps, de lado, o que for).</span></li>
           </ol>
           <button className="btn big" onClick={closeTips}>Bora</button>
         </Sheet>

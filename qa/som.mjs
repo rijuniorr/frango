@@ -4,7 +4,7 @@ const b = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '
 const ctx = await b.newContext({ viewport: { width: 360, height: 780 }, hasTouch: true, isMobile: true, serviceWorkers: 'block', permissions: ['camera'] })
 await ctx.route(/supabase\.co/, r => r.fulfill({ status: 401, body: '{}' }))
 await ctx.addInitScript(() => {
-  localStorage.setItem('frango.install.later', '9999999999999'); localStorage.setItem('frango.dicas2', '1')
+  localStorage.setItem('frango.install.later', '9999999999999'); localStorage.setItem('frango.dicas3', '1')
   window.__ctxs = []; window.__beeps = 0
   const AC = window.AudioContext
   window.AudioContext = class extends AC { constructor(...a) { super(...a); window.__ctxs.push(this) } }
