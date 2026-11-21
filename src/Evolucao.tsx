@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { alignTransform, alignCss, type Pose } from './pose'
 import type { Ctx } from './App'
 import { hap, fmtKg, fmtDate, gesture, ANGLES, type Angle, type Data, type Profile } from './lib'
 import { Compare, Seg } from './ui'
@@ -49,7 +50,7 @@ function Solo({ data, p, angle, active }: { data: Data; p: Profile; angle: Angle
       <Compare before={withPhoto.length > 1 ? url(withPhoto[0].photos[angle]) : undefined} after={url(withPhoto.at(-1)?.photos[angle])}
         a={withPhoto[0] ? fmtDate(withPhoto[0].week) : 'antes'} b={withPhoto.at(-1) ? fmtDate(withPhoto.at(-1)!.week) : 'agora'} />
 
-      {withPhoto.length > 1 && <Replay key={p.id + angle} active={active} frames={withPhoto.map(c => ({ src: url(c.photos[angle])!, label: fmtDate(c.week) }))} />}
+      {withPhoto.length > 1 && <Replay key={p.id + angle} active={active} frames={withPhoto.map(c => ({ src: url(c.photos[angle])!, label: fmtDate(c.week), pose: c.photos.pose?.[angle] }))} />}
 
       <h2 className="h">Peso</h2>
       <Chart lines={[{ pts: s, cls: 'a' }]} goal={p.goal_kg} />
@@ -192,7 +193,7 @@ function Chart({ lines, legend, goal }: { lines: { pts: { week: string; w: numbe
 }
 
 // timelapse simples: passa as fotos em sequência
-function Replay({ frames, active }: { frames: { src: string; label: string }[]; active: boolean }) {
+function Replay({ frames, active }: { frames: { src: string; label: string; pose?: Pose }[]; active: boolean }) {
   const [i, setI] = useState(frames.length - 1)
   const [play, setPlay] = useState(false)
   const [speed, setSpeed] = useState(1)
@@ -203,12 +204,13 @@ function Replay({ frames, active }: { frames: { src: string; label: string }[]; 
     const t = setInterval(() => setI(v => { hap(3); return (Math.min(v, frames.length - 1) + 1) % frames.length }), 600 / speed)
     return () => clearInterval(t)
   }, [play, speed, frames.length])
+  const base = frames.find(f => f.pose)?.pose // alinha cada foto com pose na primeira que tem pose
   return (
     <>
       <h2 className="h">Replay</h2>
       <div className="card replay">
         <div className="replay-img">
-          {frames.map((f, j) => <img key={j} src={f.src} alt="" style={{ opacity: j === k ? 1 : 0 }} />)}
+          {frames.map((f, j) => <img key={j} src={f.src} alt="" className={base && f.pose ? 'al' : ''} style={{ opacity: j === k ? 1 : 0, transform: base && f.pose ? alignCss(alignTransform(base, f.pose)) : undefined }} />)}
           <span className="pill">{frames[k].label}</span>
         </div>
         <div className="replay-ctl">

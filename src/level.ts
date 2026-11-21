@@ -18,6 +18,17 @@ export function beep(freq = 880, ms = 70, vol = 0.18) {
   o.connect(g).connect(ac.destination); o.start(t); o.stop(t + ms / 1000 + 0.02)
 }
 
+
+// tom contínuo (sensor de ré no alvo)
+let tn: { o: OscillatorNode; g: GainNode } | null = null
+export function tone(on: boolean, freq = 1320) {
+  if (!on) { if (tn && ac) { try { tn.g.gain.setTargetAtTime(0, ac.currentTime, 0.03); tn.o.stop(ac.currentTime + 0.2) } catch { /* */ } } tn = null; return }
+  if (tn || !ac) return
+  const o = ac.createOscillator(), g = ac.createGain()
+  o.frequency.value = freq; g.gain.value = 0.0001; g.gain.setTargetAtTime(0.12, ac.currentTime, 0.02)
+  o.connect(g).connect(ac.destination); o.start(); tn = { o, g }
+}
+
 export type Tilt = { pitch: number; roll: number } // graus fora do ideal (0,0 = perfeito)
 export const LEVEL_OK = { pitch: 3, roll: 2 }
 export const isLevel = (t: Tilt | null) => !!t && Math.abs(t.pitch) <= LEVEL_OK.pitch && Math.abs(t.roll) <= LEVEL_OK.roll

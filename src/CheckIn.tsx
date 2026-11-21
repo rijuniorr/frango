@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Ctx } from './App'
-import { sb, hap, iso, monday, shrink, nice, ANGLES, type Angle } from './lib'
+import { sb, hap, iso, monday, shrink, nice, ANGLES, type Angle, type Checkin } from './lib'
 import { Ruler, Hold, useBack, Sheet } from './ui'
-import { useTilt, isLevel, tiltHint, askMotion, unlockAudio, beep } from './level'
+import { useTilt, isLevel, tiltHint, askMotion, unlockAudio, beep, tone } from './level'
+import { loadPose, releasePose, detectVideo, detectPhoto, toCrop, scorePose, defaultRef, luma, tooDark, GOOD, type Pose } from './pose'
 import { nowWeight } from './Feed'
 import Cropper from './Cropper'
 
@@ -39,6 +40,59 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   const level = isLevel(tilt)
   const wasLevel = useRef(false)
   useBack(close)
+
+  // ---- sensor de ré (pose no aparelho). Se o modelo não carregar, nada disso aparece e o resto segue igual.
+  const flag = (k: string, d: boolean) => { try { const v = localStorage.getItem(k); return v == null ? d : v === '1' } catch { return d } }
+  const [sound, setSound] = useState(() => flag('frango.sound', true))
+  const [auto, setAuto] = useState(() => flag('frango.auto', true))
+  const [sense, setSense] = useState<{ score: number; hint: string; ok: boolean; dark: boolean } | null>(null)
+  const meta = useRef<Partial<Record<Angle, { pose: Pose | null; lum: number }>>>({})
+  const refC = mine.find(x => x.photos.pose?.[angle]) // referência = foto mais antiga desse ângulo
+  const L = useRef({ angle, ref: null as Pose | null, refLum: undefined as number | undefined, tilt: null as typeof tilt, facing, sound, auto, hold: false, taken: false, grab: () => {} })
+  L.current = {
+    angle, ref: refC?.photos.pose?.[angle] ?? null, refLum: refC?.photos.lum?.[angle], tilt, facing, sound, auto,
+    hold: count > 0 || !!crop, taken: !!shots[angle], grab,
+  }
+  function flip(k: string, v: boolean, set: (v: boolean) => void) {
+    unlockAudio(); set(v); hap(6)
+    try { localStorage.setItem(k, v ? '1' : '0') } catch { /* */ }
+  }
+  useEffect(() => {
+    if (step !== 'cam') return
+    let dead = false, raf = 0, last = 0, onSince = 0, nextBeep = 0, lumAt = 0, lum = 1, score = -1
+    const cv = document.createElement('canvas'); cv.width = 24; cv.height = 32
+    let lmk: Awaited<ReturnType<typeof loadPose>> | null = null
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick)
+      const s = L.current, v = video.current
+      if (!lmk || !v || v.readyState < 2 || !v.videoWidth) return
+      const quiet = s.hold || !s.sound
+      if (score >= 0 && !s.hold) { // bip de ré: quanto maior a nota, mais rápido; no alvo, tom contínuo
+        if (score >= GOOD) { tone(!quiet) }
+        else { tone(false); if (!quiet && now >= nextBeep) { beep(500 + score * 5, 50, 0.12); hap(8); nextBeep = now + 900 - 780 * Math.min(1, score / GOOD) } }
+      } else tone(false)
+      if (now - last < 75) return // ~13 fps
+      last = now
+      if (s.hold) { onSince = 0; return }
+      try {
+        if (now - lumAt > 500) { lumAt = now; const g = cv.getContext('2d', { willReadFrequently: true })!; g.drawImage(v, 0, 0, 24, 32); lum = luma(g.getImageData(0, 0, 24, 32).data) }
+        const mirror = s.facing === 'user'
+        const raw = detectVideo(lmk, v, now)
+        const live = raw && toCrop(raw, v.videoWidth, v.videoHeight, mirror)
+        const r = scorePose(live, s.ref ?? defaultRef(s.angle), s.angle, s.tilt, mirror)
+        score = r.score
+        const hint = r.hint
+        setSense(p => (p && p.score === r.score && p.hint === hint && p.dark === tooDark(lum, s.refLum) ? p : { score: r.score, hint, ok: r.ok, dark: tooDark(lum, s.refLum) }))
+        if (r.ok && s.auto && !s.taken) {
+          onSince ||= now
+          if (now - onSince >= 3000) { onSince = 0; tone(false); beep(1320, 220, 0.25); s.grab() } // 3 s no alvo = foto (o timer vale pro botão)
+        } else onSince = 0
+      } catch { /* modo IMAGE rolando ou frame ruim: pula */ }
+    }
+    loadPose().then(m => { if (dead) return; lmk = m; raf = requestAnimationFrame(tick) }).catch(() => {})
+    return () => { dead = true; cancelAnimationFrame(raf); tone(false); setSense(null) }
+  }, [step, facing])
+  useEffect(() => () => releasePose(), [])
 
   // bip curto quando o celular fica no nível
   useEffect(() => {
@@ -101,6 +155,9 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   // toda foto passa pelo editor (recorte 3:4 igual pra todas → antes/depois alinha)
   function addShot(blob: Blob) {
     setCrop(null)
+    const a = angle
+    meta.current[a] = undefined
+    loadPose().then(m => detectPhoto(m, blob)).then(r => { meta.current[a] = r }).catch(() => {}) // pose da foto FINAL recortada
     setShots(s => ({ ...s, [angle]: { blob, url: URL.createObjectURL(blob) } }))
     hap(40)
     const next = ANGLES.find(a => a !== angle && !shots[a])
@@ -135,7 +192,8 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
     setBusy(true)
     const sent: string[] = []
     try {
-      const photos: Partial<Record<Angle, string>> = { ...(existing?.photos ?? {}) }
+      const photos: Checkin['photos'] = { ...(existing?.photos ?? {}) }
+      const pose = { ...(photos.pose ?? {}) }, lum = { ...(photos.lum ?? {}) }
       const replaced: string[] = []
       for (const a of ANGLES) {
         const s = shots[a]
@@ -146,7 +204,10 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
         sent.push(path)
         if (photos[a]) replaced.push(photos[a]!)
         photos[a] = path
+        const m = meta.current[a]
+        if (m?.pose) { pose[a] = m.pose; lum[a] = m.lum } else { delete pose[a]; delete lum[a] }
       }
+      if (Object.keys(pose).length) { photos.pose = pose; photos.lum = lum } else { delete photos.pose; delete photos.lum }
       const { error } = await sb.from('checkins').upsert({ user_id: data.me, week, weight, note: note.trim() || null, photos }, { onConflict: 'user_id,week' })
       if (error) throw error
       if (replaced.length) sb.storage.from('fotos').remove(replaced) // foto trocada na mesma semana: apaga a velha
@@ -167,7 +228,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   return (
     <div className="overlay">
       {step === 'cam' ? (
-        <div className="cam">
+        <div className="cam" onPointerDown={unlockAudio}>
           <div className="cam-top">
             <button className="ib" onClick={close}>Fechar</button>
             <span className="pill">{n}/3 fotos</span>
@@ -179,11 +240,17 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
               onLoadedMetadata={e => setRatio(`${e.currentTarget.videoWidth} / ${e.currentTarget.videoHeight}`)}
               onResize={e => setRatio(`${e.currentTarget.videoWidth} / ${e.currentTarget.videoHeight}`)} />
             {ghost && <img src={ghost} className="ghost" alt="" style={{ opacity: go }} />}
-            <svg viewBox="0 0 200 400" className="outline" aria-hidden="true"><circle cx="100" cy="50" r="23" /><path d={BODY} /></svg>
+            <svg viewBox="0 0 200 400" className={'outline' + (sense?.ok ? ' on' : '')} aria-hidden="true"><circle cx="100" cy="50" r="23" /><path d={BODY} /></svg>
             {shots[angle] && <img src={shots[angle]!.url} className="taken" alt="" />}
             {motion && tilt && (
               <div className={'level' + (level ? ' ok' : '')} aria-label={tiltHint(tilt)}>
                 <i style={{ transform: `translate(${Math.max(-26, Math.min(26, tilt.roll * 3))}px, ${Math.max(-26, Math.min(26, tilt.pitch * 3))}px)` }} />
+              </div>
+            )}
+            {sense && (
+              <div className={'sense' + (sense.ok ? ' ok' : '')}>
+                <b>{sense.score}</b><i><u style={{ width: sense.score + '%' }} /></i><span>{sense.hint}</span>
+                {sense.dark && <em>Tá mais escuro que da outra vez</em>}
               </div>
             )}
             {count > 0 && <div className="count" key={count}>{count}</div>}
@@ -196,6 +263,11 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
           </p>
           <div className="chips timer-chips" aria-label="Timer">
             {[3, 5, 10].map(s => <button key={s} className={s === secs ? 'on' : ''} onClick={() => pickSecs(s)}>{s}s</button>)}
+          </div>
+
+          <div className="chips timer-chips" aria-label="Sensor">
+            <button className={sound ? 'on' : ''} onClick={() => flip('frango.sound', !sound, setSound)}>Som {sound ? 'on' : 'off'}</button>
+            <button className={auto ? 'on' : ''} onClick={() => flip('frango.auto', !auto, setAuto)}>Auto {auto ? 'on' : 'off'}</button>
           </div>
 
           {ghost && (
