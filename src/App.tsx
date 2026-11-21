@@ -1,179 +1,110 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { sb, load, hap, type Data } from './lib'
+import Login from './Login'
+import Feed from './Feed'
+import Hoje from './Hoje'
+import CheckIn from './CheckIn'
+import Evolucao from './Evolucao'
+import Eu from './Eu'
 
-// Fase 1 — teste de risco: câmera ao vivo + contorno + fantasma da última foto,
-// rodando como PWA instalado (foco no iPhone do Fachola).
-
-type Angle = 'frente' | 'lado' | 'costas'
-const ANGLES: Angle[] = ['frente', 'lado', 'costas']
-
-// mesma silhueta do protótipo (viewBox 0 0 200 400)
-const p = { sh: 46, wa: 33, hi: 34, ar: 18 }
-const c = 100
-const BODY = `M${c-11} 76C${c-20} 84 ${c-p.sh+8} 86 ${c-p.sh} 98L${c-p.sh-24} 198C${c-p.sh-24} 204 ${c-p.sh-24+p.ar} 206 ${c-p.sh-22+p.ar} 200L${c-p.sh+12} 126C${c-p.wa-4} 156 ${c-p.wa} 178 ${c-p.wa} 200L${c-p.hi} 246L${c-25} 376H${c-7}L${c} 266L${c+7} 376H${c+25}L${c+p.hi} 246L${c+p.wa} 200C${c+p.wa} 178 ${c+p.wa+4} 156 ${c+p.sh-12} 126L${c+p.sh+22-p.ar} 200C${c+p.sh+24-p.ar} 206 ${c+p.sh+24} 204 ${c+p.sh+24} 198L${c+p.sh} 98C${c+p.sh-8} 86 ${c+20} 84 ${c+11} 76Z`
-
-// vibração: Android = navigator.vibrate; iPhone (iOS 18+) = clique num <input switch>
-const sw = document.createElement('label')
-sw.innerHTML = '<input type="checkbox" switch>'
-sw.style.cssText = 'position:fixed;opacity:0;pointer-events:none;left:-99px'
-document.body.append(sw)
-function hap(ms = 12) {
-  if (navigator.vibrate) navigator.vibrate(ms)
-  else sw.click()
+export type Ctx = {
+  data: Data
+  reload: () => Promise<void>
+  toast: (msg: string, kind?: 'ok' | 'roast') => void
+  openCheckin: () => void
 }
 
-const key = (a: Angle) => `frango.ghost.${a}`
-const load = (a: Angle) => { try { return localStorage.getItem(key(a)) } catch { return null } }
+const TABS = [
+  ['feed', 'Feed', 'M4 11l8-7 8 7v9h-5v-6H9v6H4z'],
+  ['hoje', 'Hoje', 'M6 4v16M18 4v16M3 9v6M21 9v6M6 12h12'],
+  ['evo', 'Evolução', 'M4 18l5-6 4 3 7-9M20 6v5M20 6h-5'],
+  ['eu', 'Eu', 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c1-4 4-6 8-6s7 2 8 6'],
+] as const
+type Tab = (typeof TABS)[number][0]
 
 export default function App() {
-  const video = useRef<HTMLVideoElement>(null)
-  const stream = useRef<MediaStream | null>(null)
-  const [facing, setFacing] = useState<'user' | 'environment'>('user')
-  const [angle, setAngle] = useState<Angle>('frente')
-  const [ghost, setGhost] = useState(() => load('frente'))
-  const [shot, setShot] = useState<string | null>(null)
-  const [count, setCount] = useState(0)
-  const [err, setErr] = useState('')
-  const [info, setInfo] = useState('')
-  const [ratio, setRatio] = useState('3 / 4')
-  const [go, setGo] = useState(() => { try { return +(localStorage.getItem('frango.go') ?? 0.55) } catch { return 0.55 } })
-
-  async function start() {
-    stream.current?.getTracks().forEach(t => t.stop())
-    setErr('')
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({
-        // pedir "o máximo" (4096²) faz o celular usar o sensor inteiro, sem recorte = sem zoom
-        video: { facingMode: facing, width: { ideal: 4096 }, height: { ideal: 4096 } },
-        audio: false,
-      })
-      stream.current = s
-      const tr = s.getVideoTracks()[0]
-      // Android: alguns aparelhos abrem com zoom digital → força o mínimo
-      const caps = (tr.getCapabilities?.() ?? {}) as { zoom?: { min: number } }
-      if (caps.zoom) await tr.applyConstraints({ advanced: [{ zoom: caps.zoom.min } as MediaTrackConstraintSet] }).catch(() => {})
-      video.current!.srcObject = s
-      await video.current!.play()
-      const st = tr.getSettings()
-      setInfo(`${st.width}×${st.height}`)
-    } catch (e) {
-      setErr(String((e as Error).message || e))
-    }
-  }
+  const [session, setSession] = useState<Session | null | undefined>(undefined)
+  const [data, setData] = useState<Data | null>(null)
+  const [tab, setTab] = useState<Tab>('feed')
+  const [cam, setCam] = useState(false)
+  const [msg, setMsg] = useState<{ text: string; kind: 'ok' | 'roast'; id: number } | null>(null)
 
   useEffect(() => {
-    start()
-    // iPhone congela a câmera ao voltar do segundo plano → reabre
-    const vis = () => document.visibilityState === 'visible' && start()
-    document.addEventListener('visibilitychange', vis)
-    return () => { document.removeEventListener('visibilitychange', vis); stream.current?.getTracks().forEach(t => t.stop()) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facing])
-
-  useEffect(() => setGhost(load(angle)), [angle])
-
-  function grab() {
-    const v = video.current!
-    const vw = v.videoWidth, vh = v.videoHeight
-    if (!vw) return
-    // foto inteira, sem recorte; lado maior até 1600 px
-    const k = Math.min(1, 1600 / Math.max(vw, vh))
-    const W = Math.round(vw * k), H = Math.round(vh * k)
-    const cv = document.createElement('canvas')
-    cv.width = W; cv.height = H
-    const g = cv.getContext('2d')!
-    if (facing === 'user') { g.translate(W, 0); g.scale(-1, 1) }
-    g.drawImage(v, 0, 0, W, H)
-    setShot(cv.toDataURL('image/jpeg', 0.85))
-    hap(40)
-  }
-
-  function countdown() {
-    let n = 3
-    setCount(n); hap()
-    const t = setInterval(() => {
-      n--
-      if (n === 0) { clearInterval(t); setCount(0); grab() }
-      else { setCount(n); hap() }
-    }, 1000)
-  }
-
-  function keep() {
-    // fantasma menor pra caber no localStorage
-    const img = new Image()
-    img.onload = () => {
-      const k = 600 / Math.max(img.width, img.height)
-      const cv = document.createElement('canvas')
-      cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k)
-      cv.getContext('2d')!.drawImage(img, 0, 0, cv.width, cv.height)
-      const small = cv.toDataURL('image/jpeg', 0.7)
-      try { localStorage.setItem(key(angle), small) } catch { /* cheio */ }
-      setGhost(small)
-      setShot(null)
-      hap(20)
+    if (import.meta.env.DEV && location.search.includes('demo')) {
+      import('./demo').then(m => { setSession({ user: { id: 'r' } } as Session); setData(m.demo()) })
+      return
     }
-    img.src = shot!
-  }
+    sb.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data: sub } = sb.auth.onAuthStateChange((_e, s) => setSession(s))
+    return () => sub.subscription.unsubscribe()
+  }, [])
 
-  // plano B: câmera nativa do celular
-  function native(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]
-    if (f) setShot(URL.createObjectURL(f))
-    e.target.value = ''
-  }
+  const uid = session?.user.id
+  const reload = useCallback(async () => { if (uid && uid !== 'r') setData(await load(uid)) }, [uid])
 
-  const standalone = matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone
+  useEffect(() => {
+    if (uid === 'r') return // demo
+    if (!uid) { setData(null); return }
+    reload()
+    // o que o outro posta aparece na hora
+    const ch = sb.channel('tudo')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => reload())
+      .subscribe()
+    const vis = () => document.visibilityState === 'visible' && reload()
+    document.addEventListener('visibilitychange', vis)
+    return () => { sb.removeChannel(ch); document.removeEventListener('visibilitychange', vis) }
+  }, [uid, reload])
+
+  const toast = useCallback((text: string, kind: 'ok' | 'roast' = 'ok') => {
+    setMsg({ text, kind, id: Date.now() })
+    if (kind === 'roast') hap([80, 60, 80, 60, 200])
+  }, [])
+  useEffect(() => {
+    if (!msg) return
+    const t = setTimeout(() => setMsg(null), msg.kind === 'roast' ? 6000 : 2600)
+    return () => clearTimeout(t)
+  }, [msg])
+
+  if (session === undefined) return <div className="splash"><span className="logo big">frango<i>.</i></span></div>
+  if (!session) return <Login />
+  if (!data) return <div className="splash"><span className="logo big pulse">frango<i>.</i></span></div>
+
+  const ctx: Ctx = { data, reload, toast, openCheckin: () => { setCam(true); hap(10) } }
+  const ti = TABS.findIndex(t => t[0] === tab)
 
   return (
-    <div className="app">
-      {/* moldura segue o formato real da câmera → nada é cortado */}
-      <div className="frame" style={{ aspectRatio: ratio }}>
-        <video ref={video} playsInline muted autoPlay className={facing === 'user' ? 'mirror' : ''}
-          onLoadedMetadata={e => setRatio(`${e.currentTarget.videoWidth} / ${e.currentTarget.videoHeight}`)}
-          onResize={e => setRatio(`${e.currentTarget.videoWidth} / ${e.currentTarget.videoHeight}`)} />
-        {ghost && <img src={ghost} className="ghost" alt="" style={{ '--go': go } as React.CSSProperties} />}
-        <svg viewBox="0 0 200 400" className="outline" aria-hidden="true">
-          <circle cx="100" cy="50" r="23" />
-          <path d={BODY} />
-        </svg>
-        {count > 0 && <div className="count" key={count}>{count}</div>}
-        {err && <div className="err">Câmera falhou: {err}<br />Usa a câmera nativa embaixo.</div>}
-        <div className="top">
-          <span className="logo">frango<i>.</i></span>
-          <span className="tag">{standalone ? 'app instalado' : 'navegador'} · {info || '—'}</span>
+    <>
+      <main className="screen" key={tab}>
+        {tab === 'feed' && <Feed {...ctx} />}
+        {tab === 'hoje' && <Hoje {...ctx} />}
+        {tab === 'evo' && <Evolucao {...ctx} />}
+        {tab === 'eu' && <Eu {...ctx} />}
+      </main>
+
+      <nav className="dock">
+        <div className="tabs glass" style={{ '--i': ti } as React.CSSProperties}>
+          <i className="lens" />
+          {TABS.map(([k, l, d]) => (
+            <button key={k} className={k === tab ? 'on' : ''} onClick={() => { setTab(k); hap(8); scrollTo(0, 0) }} aria-label={l}>
+              <svg viewBox="0 0 24 24"><path d={d} /></svg>
+              <span>{l}</span>
+            </button>
+          ))}
         </div>
-      </div>
+        <button className="fab" onClick={ctx.openCheckin} aria-label="Check-in">
+          <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>
+        </button>
+      </nav>
 
-      {ghost && (
-        <input type="range" className="fade" aria-label="Força do fantasma" min={0.15} max={0.9} step={0.05} value={go}
-          onChange={e => { const v = +e.target.value; setGo(v); hap(5); try { localStorage.setItem('frango.go', String(v)) } catch { /* */ } }} />
-      )}
+      {cam && <CheckIn {...ctx} close={() => setCam(false)} />}
 
-      <div className="seg">
-        {ANGLES.map(a => (
-          <button key={a} className={a === angle ? 'on' : ''} onClick={() => { setAngle(a); hap(8) }}>{a}</button>
-        ))}
-      </div>
-
-      <div className="row">
-        <label className="ib">
-          <input type="file" accept="image/*" capture={facing} onChange={native} hidden />
-          nativa
-        </label>
-        <button className="shoot" onClick={countdown} aria-label="Tirar foto" disabled={count > 0} />
-        <button className="ib" onClick={() => { setFacing(f => f === 'user' ? 'environment' : 'user'); hap(8) }}>virar</button>
-      </div>
-
-      <a className="proto" href="./prototipo.html">ver protótipo do app →</a>
-
-      {shot && (
-        <div className="review">
-          <img src={shot} alt="foto tirada" />
-          <div className="row">
-            <button className="ib" onClick={() => setShot(null)}>refazer</button>
-            <button className="btn" onClick={keep}>usar como fantasma</button>
-          </div>
+      {msg && (
+        <div className={'island ' + msg.kind} key={msg.id} onClick={() => setMsg(null)}>
+          {msg.kind === 'roast' && <b>ESTOUROU O LIMITE</b>}
+          <span>{msg.text}</span>
         </div>
       )}
-    </div>
+    </>
   )
 }
