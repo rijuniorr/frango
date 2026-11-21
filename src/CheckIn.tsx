@@ -31,6 +31,8 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   const lastW = nowWeight({ data }, data.me)
   const [weight, setWeight] = useState(existing?.weight ?? lastW ?? 80)
   const [note, setNote] = useState(existing?.note ?? '')
+  const [tag, setTag] = useState<'pre' | 'pos' | null>(existing?.photos.tag ?? null)
+  const [noWeight, setNoWeight] = useState(existing ? existing.weight == null : false)
   const [busy, setBusy] = useState(false)
   const [crop, setCrop] = useState<string | null>(null)
   const [tips, setTips] = useState(() => { try { return !localStorage.getItem('frango.dicas3') } catch { return false } })
@@ -197,11 +199,15 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
         if (m?.pose) { pose[a] = m.pose; lum[a] = m.lum } else { delete pose[a]; delete lum[a] }
       }
       if (Object.keys(pose).length) { photos.pose = pose; photos.lum = lum } else { delete photos.pose; delete photos.lum }
-      const { error } = await sb.from('checkins').upsert({ user_id: data.me, week, weight, note: note.trim() || null, photos }, { onConflict: 'user_id,week' })
+      if (tag) photos.tag = tag; else delete photos.tag
+      const w = noWeight ? null : weight
+      const { error } = await sb.from('checkins').upsert({ user_id: data.me, week, weight: w, note: note.trim() || null, photos }, { onConflict: 'user_id,week' })
       if (error) throw error
       if (replaced.length) sb.storage.from('fotos').remove(replaced) // foto trocada na mesma semana: apaga a velha
-      await sb.from('profiles').update({ weight_kg: weight }).eq('id', data.me) // "peso atual" acompanha o check-in
-      mutate(d => ({ ...d, profiles: d.profiles.map(x => (x.id === data.me ? { ...x, weight_kg: weight } : x)) }))
+      if (w != null) { // "peso atual" acompanha o check-in (se pesou)
+        await sb.from('profiles').update({ weight_kg: w }).eq('id', data.me)
+        mutate(d => ({ ...d, profiles: d.profiles.map(x => (x.id === data.me ? { ...x, weight_kg: w } : x)) }))
+      }
       await reload()
       toast('Check-in postado. Bora, frango.')
       close()
@@ -269,9 +275,14 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
             <button className="ib" onClick={close}>Fechar</button>
           </div>
           {n > 0 && <div className="thumbs">{ANGLES.map(a => shots[a] && <img key={a} src={shots[a]!.url} alt={a} />)}</div>}
+          <h2 className="h center">Legenda</h2>
+          <div className="chips">
+            {([['pre', 'Pré-treino'], ['pos', 'Pós-treino']] as const).map(([k, l]) => <button key={k} className={tag === k ? 'on' : ''} onClick={() => { setTag(tag === k ? null : k); hap(6) }}>{l}</button>)}
+          </div>
           <h2 className="h center">Peso de hoje</h2>
-          <Ruler value={weight} onChange={setWeight} />
-          {lastW != null && <p className="hint center">{weight - lastW === 0 ? 'Igual à última.' : `${weight - lastW > 0 ? '+' : ''}${(weight - lastW).toFixed(1).replace('.', ',')} kg desde a última.`}</p>}
+          <div className="chips"><button className={noWeight ? 'on' : ''} onClick={() => { setNoWeight(v => !v); hap(6) }}>{noWeight ? 'Sem peso hoje ✓' : 'Não pesei hoje'}</button></div>
+          {!noWeight && <Ruler value={weight} onChange={setWeight} />}
+          {!noWeight && lastW != null && <p className="hint center">{weight - lastW === 0 ? 'Igual à última.' : `${weight - lastW > 0 ? '+' : ''}${(weight - lastW).toFixed(1).replace('.', ',')} kg desde a última.`}</p>}
           <h2 className="h">Como foi a semana?</h2>
           <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Supino 70, dieta ok, churrasco no sábado…" maxLength={280} rows={3} />
           <div className="hold-dock">

@@ -83,10 +83,10 @@ export function easyScore(live: Pose | null, ref: Pose | null, mirror = true): R
   const s = mid(live, SH), h = mid(live, HIP)
   const rs = r ? mid(r, SH) : [0.5, 0.27], rh = r ? mid(r, HIP) : [0.5, 0.56]
   const torso = (a: number[], b: number[]) => Math.hypot((a[0] - b[0]) * W, (a[1] - b[1]) * H)
-  const dx = (s[0] + h[0]) / 2 - (rs[0] + rh[0]) / 2 // >0: corpo à direita da tela
+  const dx = (s[0] + h[0]) / 2 - 0.5 // CENTRO ABSOLUTO (Ricardo: sempre no meio da tela, em toda foto). >0: corpo à direita
   const dy = s[1] - rs[1] //                             >0: corpo mais baixo na tela
   const ratio = torso(s, h) / torso(rs, rh)
-  const pen = { x: Math.abs(dx) / (0.2 * loose), size: Math.abs(Math.log(ratio)) / (Math.log(1.4) * loose), y: Math.abs(dy) / (0.2 * loose) }
+  const pen = { x: Math.abs(dx) / 0.14 /* margem curta e fixa: passa só com até 7% do centro */, size: Math.abs(Math.log(ratio)) / (Math.log(1.4) * loose), y: Math.abs(dy) / (0.2 * loose) }
   const worst = (Object.keys(pen) as (keyof typeof pen)[]).reduce((a, b) => (pen[b] > pen[a] ? b : a))
   const score = Math.round(100 * Math.max(0, 1 - pen[worst]))
   const left = mirror ? 'esquerda' : 'direita', right = mirror ? 'direita' : 'esquerda'

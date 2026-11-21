@@ -75,7 +75,9 @@ assert.ok(Math.abs(id.scale - 1) < 1e-9 && Math.abs(id.dx) < 1e-9 && Math.abs(id
   // sem quadril visível = ninguém
   assert.equal(easyScore(ref.map((l, i) => (i === 23 ? [l[0], l[1], 0.1] : l)), ref).score, 0)
   // 1ª vez (sem referência): bem solto
-  assert.ok(easyScore(shift(ref, 0.12), null).ok)
+  assert.ok(!easyScore(shift(ref, 0.12), null).ok, 'sem referência também tem que ficar no centro')
+  assert.ok(easyScore(shift(ref, 0.05), null).ok, '5% do centro passa')
+  assert.ok(!easyScore(shift(ref, 0.10), ref).ok, '10% do centro não passa')
   // direção com espelho (frontal) × traseira: corpo à direita da tela
   assert.equal(easyScore(shift(ref, 0.18), ref, true).hint, 'Vai um pouco pra esquerda')
   assert.equal(easyScore(shift(ref, 0.18), ref, false).hint, 'Vai um pouco pra direita')

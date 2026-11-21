@@ -117,7 +117,7 @@ function Post({ c, data, mutate, toast }: { c: Checkin } & Ctx) {
     <article className="card post">
       <div className="post-top">
         <Avatar name={p?.name ?? '?'} mine={c.user_id === data.me} src={avatarOf(data, c.user_id)} size={36} />
-        <div><b>{p?.name}</b><span>Semana de {fmtDate(c.week)} · check-in {i + 1}</span></div>
+        <div><b>{p?.name}</b><span>Semana de {fmtDate(c.week)} · check-in {i + 1}{c.photos.tag ? (c.photos.tag === 'pre' ? ' · pré-treino' : ' · pós-treino') : ''}</span></div>
       </div>
 
       {angles.length > 0 && (

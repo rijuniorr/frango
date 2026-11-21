@@ -20,7 +20,7 @@ export const KINDS: [string, string][] = [
   ['funcional', '🔥 Funcional'], ['alongamento', '🧘 Alongamento'],
 ]
 export const kindLabel = (k: string) => KINDS.find(x => x[0] === k)?.[1] ?? k
-export type Checkin = { id: string; user_id: string; week: string; weight: number | null; note: string | null; photos: Partial<Record<Angle, string>> & { pose?: Partial<Record<Angle, import('./pose').Pose>>; lum?: Partial<Record<Angle, number>> }; created_at: string }
+export type Checkin = { id: string; user_id: string; week: string; weight: number | null; note: string | null; photos: Partial<Record<Angle, string>> & { pose?: Partial<Record<Angle, import('./pose').Pose>>; lum?: Partial<Record<Angle, number>>; tag?: 'pre' | 'pos' }; created_at: string }
 export type Like = { checkin_id: string; user_id: string }
 export type Comment = { id: string; checkin_id: string; user_id: string; body: string; created_at: string }
 
@@ -118,7 +118,7 @@ export async function load(me: string): Promise<Data> {
   ])
   const checkins = (c.data ?? []) as Checkin[]
   const profiles = (p.data ?? []) as Profile[]
-  const paths = [...checkins.flatMap(x => Object.values(x.photos).filter(v => typeof v === 'string')), ...profiles.map(x => x.avatar)].filter(Boolean) as string[]
+  const paths = [...checkins.flatMap(x => ANGLES.map(a => x.photos[a]).filter(v => typeof v === 'string')), ...profiles.map(x => x.avatar)].filter(Boolean) as string[]
   // links assinados valem 6h: reaproveita os que têm menos de 5h (senão toda foto baixa de novo e pisca)
   const now = Date.now()
   const need = paths.filter(x => !signed.has(x) || now - signed.get(x)!.t > 5 * 3600e3)

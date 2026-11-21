@@ -522,3 +522,4 @@ img { display: block; }
 .skel .live .j { fill: var(--amber); stroke-width: 0; }
 .skel .live.ok line, .skel .live.ok circle { stroke: var(--g); filter: drop-shadow(0 0 8px var(--g)); }
 .skel .live.ok .j { fill: var(--g); }
+.sheet .chips button { text-transform: none; }
