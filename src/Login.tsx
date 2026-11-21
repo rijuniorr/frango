@@ -30,6 +30,7 @@ export default function Login() {
   return (
     <form className="login" onSubmit={go}>
       <div className="login-top">
+        <img src="./logo.png" alt="" className="login-logo" />
         <span className="logo huge">frango<i>.</i></span>
         <p>Todo mundo começa frango.</p>
       </div>

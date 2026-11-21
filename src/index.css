@@ -370,3 +370,7 @@ img { display: block; }
 .ios-steps li { display: block; line-height: 1.9; }
 .ios-steps .n { display: inline-grid; vertical-align: middle; margin-right: 8px; }
 .ios-steps svg { vertical-align: middle; margin-left: 4px; }
+.login-logo { width: 150px; height: 150px; margin-left: -14px; animation: wobble 2.4s ease-in-out infinite; filter: drop-shadow(0 12px 40px rgba(30, 255, 122, .25)); }
+@keyframes wobble { 0%, 100% { transform: rotate(-4deg) } 50% { transform: rotate(4deg) translateY(-4px) } }
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand img { width: 34px; height: 34px; border-radius: 10px; }
