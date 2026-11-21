@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Ctx } from './App'
 import { sb, hap, fmtKg, iso, avatarOf, shrink, kindLabel } from './lib'
 import { Avatar } from './ui'
+import Cropper from './Cropper'
 
 const num = (s: string) => { const n = parseFloat(s.replace(',', '.')); return isNaN(n) ? null : n }
 const str = (n: number | null | undefined) => (n == null ? '' : String(n).replace('.', ','))
@@ -14,6 +15,7 @@ export default function Eu({ data, reload, mutate, toast }: Ctx) {
   const [goal, setGoal] = useState(str(me.goal_kg))
   const [fat, setFat] = useState(str(me.fat_pct))
   const [up, setUp] = useState(false)
+  const [crop, setCrop] = useState<string | null>(null)
   const w = num(weight), g = num(goal), h = num(height)
   const bmi = w && h ? w / (h / 100) ** 2 : null
   const standalone = matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone
@@ -26,13 +28,17 @@ export default function Eu({ data, reload, mutate, toast }: Ctx) {
     toast('Perfil salvo.')
   }
 
-  async function photo(e: React.ChangeEvent<HTMLInputElement>) {
+  // escolheu a foto → abre o editor (recorte redondo)
+  async function pickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     e.target.value = ''
-    if (!f) return
+    if (f) setCrop(URL.createObjectURL(await shrink(f, 2000)))
+  }
+
+  async function photo(blob: Blob) {
+    setCrop(null)
     setUp(true)
     try {
-      const blob = await shrink(f, 400, true)
       mutate(d => ({ ...d, urls: { ...d.urls, __me: URL.createObjectURL(blob) }, profiles: d.profiles.map(p => (p.id === me.id ? { ...p, avatar: '__me' } : p)) }))
       const path = `${me.id}/avatar-${Date.now()}.jpg`
       const r = await sb.storage.from('fotos').upload(path, blob, { contentType: 'image/jpeg' })
@@ -75,7 +81,7 @@ export default function Eu({ data, reload, mutate, toast }: Ctx) {
 
       <div className="card me">
         <label className={'av-edit' + (up ? ' busy' : '')}>
-          <input type="file" accept="image/*" onChange={photo} hidden />
+          <input type="file" accept="image/*" onChange={pickPhoto} hidden />
           <Avatar name={me.name} me src={avatarOf(data, me.id)} />
           <span className="cam-badge"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg></span>
         </label>
@@ -128,7 +134,8 @@ export default function Eu({ data, reload, mutate, toast }: Ctx) {
           <span>iPhone: Safari → Compartilhar → Adicionar à Tela de Início. Android: menu ⋮ → Instalar app.</span>
         </div>
       )}
-      <p className="ver">frango · v0.3</p>
+      <p className="ver">frango · v0.4</p>
+      {crop && <Cropper src={crop} aspect={1} round outW={500} title="foto de perfil" onDone={photo} onCancel={() => setCrop(null)} />}
     </>
   )
 }

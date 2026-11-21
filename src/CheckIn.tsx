@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Ctx } from './App'
-import { sb, hap, iso, monday, ANGLES, type Angle } from './lib'
+import { sb, hap, iso, monday, shrink, ANGLES, type Angle } from './lib'
 import { Ruler, Hold } from './ui'
+import Cropper from './Cropper'
 
 // mesma silhueta do protótipo (viewBox 0 0 200 400)
 const p = { sh: 46, wa: 33, hi: 34, ar: 18 }, c = 100
@@ -25,6 +26,7 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
   const [weight, setWeight] = useState(lastW ?? 80)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const [crop, setCrop] = useState<string | null>(null)
   const week = iso(monday())
 
   // fantasma = última foto sua desse ângulo
@@ -56,16 +58,19 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
     const v = video.current!
     const vw = v.videoWidth, vh = v.videoHeight
     if (!vw) return
-    const k = Math.min(1, 1600 / Math.max(vw, vh))
+    const k = Math.min(1, 2000 / Math.max(vw, vh))
     const cv = document.createElement('canvas')
     cv.width = Math.round(vw * k); cv.height = Math.round(vh * k)
     const g = cv.getContext('2d')!
     if (facing === 'user') { g.translate(cv.width, 0); g.scale(-1, 1) }
     g.drawImage(v, 0, 0, cv.width, cv.height)
-    cv.toBlob(b => b && addShot(b), 'image/jpeg', 0.85)
+    hap(40)
+    cv.toBlob(b => b && setCrop(URL.createObjectURL(b)), 'image/jpeg', 0.9)
   }
 
+  // toda foto passa pelo editor (recorte 3:4 igual pra todas → antes/depois alinha)
   function addShot(blob: Blob) {
+    setCrop(null)
     setShots(s => ({ ...s, [angle]: { blob, url: URL.createObjectURL(blob) } }))
     hap(40)
     const next = ANGLES[ANGLES.indexOf(angle) + 1]
@@ -82,20 +87,11 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
     }, 1000)
   }
 
-  // plano B: câmera nativa (reduz pra 1600 px)
-  function native(e: React.ChangeEvent<HTMLInputElement>) {
+  // galeria ou câmera nativa do celular → editor
+  async function native(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     e.target.value = ''
-    if (!f) return
-    const img = new Image()
-    img.onload = () => {
-      const k = Math.min(1, 1600 / Math.max(img.width, img.height))
-      const cv = document.createElement('canvas')
-      cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k)
-      cv.getContext('2d')!.drawImage(img, 0, 0, cv.width, cv.height)
-      cv.toBlob(b => b && addShot(b), 'image/jpeg', 0.85)
-    }
-    img.src = URL.createObjectURL(f)
+    if (f) setCrop(URL.createObjectURL(await shrink(f, 2000)))
   }
 
   async function post() {
@@ -142,7 +138,7 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
             <svg viewBox="0 0 200 400" className="outline" aria-hidden="true"><circle cx="100" cy="50" r="23" /><path d={BODY} /></svg>
             {shots[angle] && <img src={shots[angle]!.url} className="taken" alt="" />}
             {count > 0 && <div className="count" key={count}>{count}</div>}
-            {err && <div className="err">Câmera falhou: {err}<br />Usa o botão “nativa”.</div>}
+            {err && <div className="err">Câmera falhou: {err}<br />Usa o botão “galeria”.</div>}
           </div>
 
           {ghost && (
@@ -156,8 +152,8 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
 
           <div className="row">
             <label className="ib">
-              <input type="file" accept="image/*" capture={facing} onChange={native} hidden />
-              nativa
+              <input type="file" accept="image/*" onChange={native} hidden />
+              galeria
             </label>
             <button className="shoot" onClick={countdown} aria-label="Tirar foto" disabled={count > 0} />
             <button className="ib" onClick={() => { setFacing(f => (f === 'user' ? 'environment' : 'user')); hap(8) }}>virar</button>
@@ -179,6 +175,7 @@ export default function CheckIn({ data, reload, toast, close }: Ctx & { close: (
           <Hold label="Segura pra postar" onDone={post} busy={busy} />
         </div>
       )}
+      {crop && <Cropper src={crop} aspect={3 / 4} outW={1200} title={`ajustar · ${angle}`} onDone={addShot} onCancel={() => setCrop(null)} />}
     </div>
   )
 }

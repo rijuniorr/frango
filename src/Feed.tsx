@@ -16,7 +16,7 @@ export default function Feed(ctx: Ctx) {
   return (
     <>
       <header className="bar">
-        <span className="logo brand"><img src="./icon-192.png" alt="" /><span>frango<i>.</i></span></span>
+        <span className="logo brand"><img src="./logo.png" alt="" /><span>frango<i>.</i></span></span>
         <span className="pill">Semana {n}</span>
       </header>
 
