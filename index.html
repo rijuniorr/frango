@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="pt-BR">
   <head>
+    <script>/* o Chrome avisa "pode instalar" uma vez só: guarda já, antes do app carregar */ window.__bip = null; addEventListener("beforeinstallprompt", function (e) { e.preventDefault(); window.__bip = e; dispatchEvent(new Event("frango:bip")) }); addEventListener("appinstalled", function () { window.__bip = null; window.__installed = true; dispatchEvent(new Event("frango:bip")) })</script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#050505" />

@@ -1,13 +1,25 @@
 {
+  "id": "./",
   "name": "Frango",
   "short_name": "Frango",
+  "description": "Evolução na academia do Ricardo e do Gabriel: check-in semanal, antes e depois, treinos e besteiras.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#050505",
   "theme_color": "#050505",
+  "lang": "pt-BR",
+  "categories": ["health", "fitness", "lifestyle"],
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
-  ]
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "shots/feed.webp", "sizes": "720x1560", "type": "image/webp", "form_factor": "narrow", "label": "Feed com antes e depois" },
+    { "src": "shots/evolucao.webp", "sizes": "720x1560", "type": "image/webp", "form_factor": "narrow", "label": "Evolução" },
+    { "src": "shots/treino.webp", "sizes": "720x1560", "type": "image/webp", "form_factor": "narrow", "label": "Marcar treino" }
+  ],
+  "related_applications": [{ "platform": "webapp", "url": "https://rijuniorr.github.io/frango/manifest.webmanifest" }]
 }
