@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { hap } from './lib'
 
 // antes/depois arrastável
@@ -85,6 +86,26 @@ export function Hold({ label, onDone, busy }: { label: string; onDone: () => voi
   )
 }
 
-export function Avatar({ name, me }: { name: string; me?: boolean }) {
-  return <span className={'av' + (me ? ' me' : '')}>{name[0]}</span>
+export function Avatar({ name, me, src }: { name: string; me?: boolean; src?: string }) {
+  return <span className={'av' + (me ? ' me' : '')}>{src ? <img src={src} alt="" /> : name[0]}</span>
+}
+
+// sheet de baixo que arrasta pra fechar
+export function Sheet({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  const [y, setY] = useState(0)
+  const start = useRef<number | null>(null)
+  const downOnBg = useRef(false) // só fecha se o toque começou no fundo (evita o "clique fantasma" do toque que abriu)
+  // portal: fora da tela animada, senão a barra de abas fica por cima
+  return createPortal(
+    <div className="sheet-bg" onPointerDown={e => { downOnBg.current = e.target === e.currentTarget }} onClick={e => { if (downOnBg.current && e.target === e.currentTarget) onClose() }}>
+      <div className="sheet-card" onClick={e => e.stopPropagation()} style={{ transform: y ? `translateY(${y}px)` : undefined, transition: start.current == null ? undefined : 'none' }}
+        onPointerDown={e => { if ((e.target as Element).closest('.grab')) { start.current = e.clientY; (e.target as Element).setPointerCapture?.(e.pointerId) } }}
+        onPointerMove={e => { if (start.current != null) setY(Math.max(0, e.clientY - start.current)) }}
+        onPointerUp={() => { if (start.current == null) return; start.current = null; if (y > 90) { hap(8); onClose() } setY(0) }}>
+        <i className="grab" />
+        {children}
+      </div>
+    </div>,
+    document.body,
+  )
 }

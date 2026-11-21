@@ -20,14 +20,14 @@ export function demo(): Data {
   const days: Data['days'] = []
   for (let i = 0; i < 40; i++) {
     const d = iso(new Date(Date.now() - i * 864e5))
-    days.push({ user_id: R, day: d, trained: i % 3 !== 2, junk: i % 4 === 0 ? 1 : 0 })
-    days.push({ user_id: F, day: d, trained: i % 4 === 3 ? false : true, junk: i % 3 === 0 ? 2 : 0 })
+    days.push({ user_id: R, day: d, trained: i % 3 !== 2, junk: i % 4 === 0 ? 1 : 0, kinds: i % 2 ? ['academia'] : ['corrida', 'aerobico'] })
+    days.push({ user_id: F, day: d, trained: i % 4 === 3 ? false : true, junk: i % 3 === 0 ? 2 : 0, kinds: ['academia'] })
   }
   return {
     me: R,
     profiles: [
-      { id: R, username: 'ricardo', name: 'Ricardo', is_admin: true, height_cm: 178, goal_kg: 78 },
-      { id: F, username: 'gabriel', name: 'Fachola', is_admin: false, height_cm: 182, goal_kg: 85 },
+      { id: R, username: 'ricardo', name: 'Ricardo', is_admin: true, height_cm: 178, goal_kg: 78, weight_kg: 81.6, fat_pct: 22, avatar: null },
+      { id: F, username: 'gabriel', name: 'Gabriel', is_admin: false, height_cm: 182, goal_kg: 85, weight_kg: null, fat_pct: null, avatar: null },
     ],
     settings: { max_skips: 2, max_junk: 2 },
     days, checkins, urls,

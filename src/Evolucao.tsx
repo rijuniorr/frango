@@ -3,27 +3,27 @@ import type { Ctx } from './App'
 import { hap, fmtKg, fmtDate, ANGLES, type Angle, type Data, type Profile } from './lib'
 import { Compare, Seg } from './ui'
 
-type View = 'eu' | 'ele' | 'dupla'
+// abas pelos nomes: Ricardo | Gabriel | Lado a lado
+const NAMES: [string, string][] = [['ricardo', 'Ricardo'], ['gabriel', 'Gabriel']]
 
 export default function Evolucao({ data }: Ctx) {
-  const me = data.profiles.find(p => p.id === data.me)
-  const other = data.profiles.find(p => p.id !== data.me)
-  const [view, setView] = useState<View>('eu')
+  const mine = data.profiles.find(p => p.id === data.me)?.username ?? 'ricardo'
+  const [view, setView] = useState<string>(mine)
   const [angle, setAngle] = useState<Angle>('frente')
-  const who = view === 'ele' ? other : me
+  const who = data.profiles.find(p => p.username === view)
 
   return (
     <>
       <header className="bar">
         <span className="logo">evolução<i>.</i></span>
       </header>
-      <Seg value={view} onChange={setView} options={[['eu', 'Você'], ['ele', other?.name ?? 'Ele'], ['dupla', 'Lado a lado']]} />
+      <Seg value={view} onChange={setView} options={[...NAMES.map(([u, n]) => [u, data.profiles.find(p => p.username === u)?.name ?? n] as [string, string]), ['dupla', 'Lado a lado']]} />
 
       <div className="chips">
         {ANGLES.map(a => <button key={a} className={a === angle ? 'on' : ''} onClick={() => { setAngle(a); hap(6) }}>{a}</button>)}
       </div>
 
-      {view === 'dupla' ? <Dupla data={data} angle={angle} /> : who ? <Solo data={data} p={who} angle={angle} /> : <p className="empty-txt">O parceiro ainda não entrou no app.</p>}
+      {view === 'dupla' ? <Dupla data={data} angle={angle} /> : who ? <Solo data={data} p={who} angle={angle} /> : <p className="empty-txt">Ele ainda não entrou no app.</p>}
     </>
   )
 }
@@ -36,7 +36,7 @@ function Solo({ data, p, angle }: { data: Data; p: Profile; angle: Angle }) {
   const mine = data.checkins.filter(c => c.user_id === p.id)
   const withPhoto = mine.filter(c => c.photos[angle])
   const s = series(data, p.id)
-  const first = s[0]?.w, last = s.at(-1)?.w
+  const first = s[0]?.w, last = s.at(-1)?.w ?? p.weight_kg ?? undefined
   const days = data.days.filter(d => d.user_id === p.id)
   const url = (x?: string) => (x ? data.urls[x] : undefined)
 
@@ -55,7 +55,7 @@ function Solo({ data, p, angle }: { data: Data; p: Profile; angle: Angle }) {
         <Stat label="Início" v={fmtKg(first)} u="kg" />
         <Stat label="Agora" v={fmtKg(last)} u="kg" />
         <Stat label="Total" v={first != null && last != null ? `${last - first > 0 ? '+' : ''}${fmtKg(last - first)}` : '—'} u="kg" hl />
-        <Stat label="Meta" v={fmtKg(p.goal_kg)} u="kg" />
+        <Stat label="Falta" v={p.goal_kg != null && last != null ? fmtKg(Math.abs(last - p.goal_kg)) : '—'} u="kg" />
         <Stat label="Check-ins" v={String(mine.length)} />
         <Stat label="Treinos" v={String(days.filter(d => d.trained).length)} />
         <Stat label="Furos" v={String(days.filter(d => d.trained === false).length)} />
@@ -66,7 +66,7 @@ function Solo({ data, p, angle }: { data: Data; p: Profile; angle: Angle }) {
 }
 
 function Dupla({ data, angle }: { data: Data; angle: Angle }) {
-  const ps = [...data.profiles].sort(a => (a.id === data.me ? -1 : 1))
+  const ps = [...data.profiles].sort((a, b) => a.username.localeCompare(b.username)).reverse()
   return (
     <>
       <h2 className="h">Mais recente</h2>
@@ -77,18 +77,18 @@ function Dupla({ data, angle }: { data: Data; angle: Angle }) {
           return (
             <figure key={p.id} className="card">
               {u ? <img src={u} alt="" /> : <div className="nophoto">sem foto</div>}
-              <figcaption><b>{p.id === data.me ? 'Você' : p.name}</b>{c && <span>{fmtDate(c.week)}</span>}</figcaption>
+              <figcaption><b>{p.name}</b>{c && <span>{fmtDate(c.week)}</span>}</figcaption>
             </figure>
           )
         })}
       </div>
 
       <h2 className="h">Peso dos dois</h2>
-      <Chart lines={ps.map((p, i) => ({ pts: series(data, p.id), cls: i ? 'b' : 'a' }))} legend={ps.map(p => (p.id === data.me ? 'Você' : p.name))} />
+      <Chart lines={ps.map((p, i) => ({ pts: series(data, p.id), cls: i ? 'b' : 'a' }))} legend={ps.map(p => p.name)} />
 
       <h2 className="h">Placar</h2>
       <div className="card table">
-        <div className="tr th"><span /> {ps.map(p => <b key={p.id}>{p.id === data.me ? 'Você' : p.name}</b>)}</div>
+        <div className="tr th"><span /> {ps.map(p => <b key={p.id}>{p.name}</b>)}</div>
         {([
           ['Perdeu', (id: string) => { const s = series(data, id); return s.length > 1 ? s[0].w - s.at(-1)!.w : null }, (v: number | null) => (v == null ? '—' : `${fmtKg(v)} kg`)],
           ['Treinos', (id: string) => data.days.filter(d => d.user_id === id && d.trained).length, (v: number) => String(v)],

@@ -9,9 +9,17 @@ export const sb = createClient(
 export type Angle = 'frente' | 'lado' | 'costas'
 export const ANGLES: Angle[] = ['frente', 'lado', 'costas']
 
-export type Profile = { id: string; username: string; name: string; is_admin: boolean; height_cm: number | null; goal_kg: number | null }
+export type Profile = { id: string; username: string; name: string; is_admin: boolean; height_cm: number | null; goal_kg: number | null; weight_kg: number | null; fat_pct: number | null; avatar: string | null }
 export type Settings = { max_skips: number; max_junk: number }
-export type Day = { user_id: string; day: string; trained: boolean | null; junk: number }
+export type Day = { user_id: string; day: string; trained: boolean | null; junk: number; kinds: string[] | null }
+
+// o que dá pra marcar quando treinou
+export const KINDS: [string, string][] = [
+  ['academia', '🏋️ Academia'], ['aerobico', '🫀 Aeróbico'], ['corrida', '🏃 Corrida'], ['calistenia', '🤸 Calistenia'],
+  ['esporte', '⚽ Esporte'], ['bike', '🚴 Bike'], ['natacao', '🏊 Natação'], ['luta', '🥊 Luta'],
+  ['funcional', '🔥 Funcional'], ['alongamento', '🧘 Alongamento'],
+]
+export const kindLabel = (k: string) => KINDS.find(x => x[0] === k)?.[1] ?? k
 export type Checkin = { id: string; user_id: string; week: string; weight: number | null; note: string | null; photos: Partial<Record<Angle, string>>; created_at: string }
 export type Like = { checkin_id: string; user_id: string }
 export type Comment = { id: string; checkin_id: string; user_id: string; body: string; created_at: string }
@@ -25,6 +33,27 @@ export type Data = {
   likes: Like[]
   comments: Comment[]
   urls: Record<string, string> // caminho da foto → link assinado
+}
+
+export const avatarOf = (data: Data, uid: string) => { const a = data.profiles.find(p => p.id === uid)?.avatar; return a ? data.urls[a] : undefined }
+
+// foto → JPEG com lado maior `max`
+export function shrink(src: Blob, max: number, square = false): Promise<Blob> {
+  return new Promise((res, rej) => {
+    const img = new Image()
+    img.onload = () => {
+      const s = square ? Math.min(img.width, img.height) : 0
+      const k = Math.min(1, max / (square ? s : Math.max(img.width, img.height)))
+      const cv = document.createElement('canvas')
+      cv.width = Math.round((square ? s : img.width) * k); cv.height = Math.round((square ? s : img.height) * k)
+      const g = cv.getContext('2d')!
+      if (square) g.drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, cv.width, cv.height)
+      else g.drawImage(img, 0, 0, cv.width, cv.height)
+      cv.toBlob(b => (b ? res(b) : rej(new Error('foto'))), 'image/jpeg', 0.85)
+    }
+    img.onerror = rej
+    img.src = URL.createObjectURL(src)
+  })
 }
 
 // login: usuário + senha curta. O Supabase exige 6+ caracteres, então a senha é completada aqui.
@@ -67,7 +96,8 @@ export async function load(me: string): Promise<Data> {
     sb.from('comments').select('*').order('created_at'),
   ])
   const checkins = (c.data ?? []) as Checkin[]
-  const paths = checkins.flatMap(x => Object.values(x.photos)).filter(Boolean) as string[]
+  const profiles = (p.data ?? []) as Profile[]
+  const paths = [...checkins.flatMap(x => Object.values(x.photos)), ...profiles.map(x => x.avatar)].filter(Boolean) as string[]
   const urls: Record<string, string> = {}
   if (paths.length) {
     const { data } = await sb.storage.from('fotos').createSignedUrls(paths, 60 * 60 * 6)
@@ -75,7 +105,7 @@ export async function load(me: string): Promise<Data> {
   }
   return {
     me,
-    profiles: (p.data ?? []) as Profile[],
+    profiles,
     settings: (s.data ?? { max_skips: 2, max_junk: 2 }) as Settings,
     days: (d.data ?? []) as Day[],
     checkins,

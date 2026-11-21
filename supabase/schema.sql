@@ -118,3 +118,18 @@ create policy fotos_apagar on storage.objects for delete to authenticated using 
 do $$ begin
   alter publication supabase_realtime add table public.checkins, public.days, public.likes, public.comments;
 exception when others then null; end $$;
+
+-- v0.3 (20/nov): categorias de treino, foto de perfil, peso atual, gordura; Fachola vira Gabriel
+alter table public.days add column if not exists kinds text[] not null default '{}';
+alter table public.profiles add column if not exists avatar text;
+alter table public.profiles add column if not exists weight_kg numeric(5,1);
+alter table public.profiles add column if not exists fat_pct numeric(4,1);
+create or replace function public.novo_perfil() returns trigger language plpgsql security definer set search_path = public as $$
+declare u text := split_part(new.email, '@', 1);
+begin
+  insert into public.profiles (id, username, name, is_admin)
+  values (new.id, u, initcap(u), u = 'ricardo')
+  on conflict (id) do nothing;
+  return new;
+end $$;
+update public.profiles set name = 'Gabriel' where username = 'gabriel' and name = 'Fachola';
