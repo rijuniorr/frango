@@ -1,6 +1,6 @@
 // node qa/pose.test.mjs — sem framework
 import assert from 'node:assert/strict'
-import { scorePose, alignTransform, defaultRef, toCrop } from '../src/pose.ts'
+import { scorePose, easyScore, alignTransform, defaultRef, toCrop } from '../src/pose.ts'
 
 const base = () => defaultRef('frente')
 const tx = (p, f) => p.map(([x, y, v]) => { const [a, b] = f(x, y); return [a, b, v] })
@@ -58,4 +58,29 @@ for (const live of [scale(ref, 1.3), shift(ref, 0.08, -0.05), shift(scale(ref, 0
 }
 const id = alignTransform(ref, ref)
 assert.ok(Math.abs(id.scale - 1) < 1e-9 && Math.abs(id.dx) < 1e-9 && Math.abs(id.rot) < 1e-9)
+
+
+// ---- versão simples (a que o app usa)
+{
+  const ref = base()
+  assert.equal(easyScore(ref, ref).score, 100)
+  assert.ok(easyScore(shift(ref, 0.06), ref).ok, 'margem grande: 6% pro lado ainda passa')
+  assert.ok(!easyScore(shift(ref, 0.16), ref).ok, '16% pro lado não passa')
+  assert.ok(easyScore(scale(ref, 1.12), ref).ok, '12% maior ainda passa')
+  assert.equal(easyScore(scale(ref, 1.4), ref).hint, 'Dá um passo pra trás')
+  assert.equal(easyScore(scale(ref, 0.7), ref).hint, 'Dá um passo pra frente')
+  // joelho/pé cortado: tornozelos invisíveis não importam
+  const semPe = ref.map((l, i) => (i >= 25 ? [l[0], 1.3, 0.05] : l))
+  assert.equal(easyScore(semPe, ref).score, 100)
+  // sem quadril visível = ninguém
+  assert.equal(easyScore(ref.map((l, i) => (i === 23 ? [l[0], l[1], 0.1] : l)), ref).score, 0)
+  // 1ª vez (sem referência): bem solto
+  assert.ok(easyScore(shift(ref, 0.12), null).ok)
+  // direção com espelho (frontal) × traseira: corpo à direita da tela
+  assert.equal(easyScore(shift(ref, 0.18), ref, true).hint, 'Vai um pouco pra esquerda')
+  assert.equal(easyScore(shift(ref, 0.18), ref, false).hint, 'Vai um pouco pra direita')
+  // a nota cresce conforme chega perto (o bip acelera)
+  const s1 = easyScore(shift(ref, 0.15), ref).score, s2 = easyScore(shift(ref, 0.08), ref).score, s3 = easyScore(shift(ref, 0.02), ref).score
+  assert.ok(s1 < s2 && s2 < s3, `${s1} ${s2} ${s3}`)
+}
 console.log('pose.test OK')

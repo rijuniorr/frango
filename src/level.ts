@@ -9,10 +9,11 @@ export function unlockAudio() {
     if (ac.state === 'suspended') ac.resume()
   } catch { /* sem som */ }
 }
-export function beep(freq = 880, ms = 70, vol = 0.18) {
+// bip FINO e ALTO (onda quadrada ~2 kHz: corta o barulho e o alto-falante do celular reproduz bem)
+export function beep(freq = 2000, ms = 80, vol = 0.5) {
   if (!ac) return
   const o = ac.createOscillator(), g = ac.createGain()
-  o.type = 'sine'; o.frequency.value = freq
+  o.type = 'square'; o.frequency.value = freq
   const t = ac.currentTime
   g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + ms / 1000)
   o.connect(g).connect(ac.destination); o.start(t); o.stop(t + ms / 1000 + 0.02)
@@ -21,11 +22,11 @@ export function beep(freq = 880, ms = 70, vol = 0.18) {
 
 // tom contínuo (sensor de ré no alvo)
 let tn: { o: OscillatorNode; g: GainNode } | null = null
-export function tone(on: boolean, freq = 1320) {
+export function tone(on: boolean, freq = 2400) {
   if (!on) { if (tn && ac) { try { tn.g.gain.setTargetAtTime(0, ac.currentTime, 0.03); tn.o.stop(ac.currentTime + 0.2) } catch { /* */ } } tn = null; return }
   if (tn || !ac) return
   const o = ac.createOscillator(), g = ac.createGain()
-  o.frequency.value = freq; g.gain.value = 0.0001; g.gain.setTargetAtTime(0.12, ac.currentTime, 0.02)
+  o.type = 'square'; o.frequency.value = freq; g.gain.value = 0.0001; g.gain.setTargetAtTime(0.35, ac.currentTime, 0.02)
   o.connect(g).connect(ac.destination); o.start(); tn = { o, g }
 }
 

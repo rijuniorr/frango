@@ -72,6 +72,33 @@ export function scorePose(live: Pose | null, ref: Pose, angle: Ang, tilt: TiltIn
   return { score, hint: score >= GOOD ? 'Isso! Fica assim' : say[worst], ok: score >= GOOD, worst }
 }
 
+// ---- versão SIMPLES (a que o app usa): só ombros + quadril (joelho/pé cortado não importa), margem grande.
+// 3 coisas: tá no meio? tá na distância certa? o celular tá na mesma altura? Nada de giroscópio/rotação/inclinação.
+export const EASY_OK = 50
+export function easyScore(live: Pose | null, ref: Pose | null, mirror = true): Result {
+  const need = [...SH, ...HIP]
+  if (!live || !need.every(i => live[i][2] > 0.4)) return { score: 0, hint: 'Entra na frente da câmera', ok: false, worst: 'sumiu' }
+  const r = ref && need.every(i => ref[i][2] > 0.4) ? ref : null
+  const loose = r ? 1 : 1.8 // sem foto de referência (1ª vez): bem mais solto
+  const s = mid(live, SH), h = mid(live, HIP)
+  const rs = r ? mid(r, SH) : [0.5, 0.27], rh = r ? mid(r, HIP) : [0.5, 0.56]
+  const torso = (a: number[], b: number[]) => Math.hypot((a[0] - b[0]) * W, (a[1] - b[1]) * H)
+  const dx = (s[0] + h[0]) / 2 - (rs[0] + rh[0]) / 2 // >0: corpo à direita da tela
+  const dy = s[1] - rs[1] //                             >0: corpo mais baixo na tela
+  const ratio = torso(s, h) / torso(rs, rh)
+  const pen = { x: Math.abs(dx) / (0.2 * loose), size: Math.abs(Math.log(ratio)) / (Math.log(1.4) * loose), y: Math.abs(dy) / (0.2 * loose) }
+  const worst = (Object.keys(pen) as (keyof typeof pen)[]).reduce((a, b) => (pen[b] > pen[a] ? b : a))
+  const score = Math.round(100 * Math.max(0, 1 - pen[worst]))
+  const left = mirror ? 'esquerda' : 'direita', right = mirror ? 'direita' : 'esquerda'
+  const say = {
+    x: dx > 0 ? `Vai um pouco pra ${left}` : `Vai um pouco pra ${right}`,
+    size: ratio > 1 ? 'Dá um passo pra trás' : 'Dá um passo pra frente',
+    y: dy > 0 ? 'Abaixa um pouco o celular' : 'Sobe um pouco o celular',
+  }
+  const ok = score >= EASY_OK
+  return { score, hint: ok ? 'Isso! Fica parado' : say[worst], ok, worst }
+}
+
 // transformação (CSS) que leva a pose `pose` em cima da `ref`: translate(dx,dy em fração da caixa) rotate(rot°) scale(scale)
 export type Align = { scale: number; dx: number; dy: number; rot: number }
 export function alignTransform(ref: Pose, pose: Pose): Align {

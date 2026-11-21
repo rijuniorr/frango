@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { Ctx } from './App'
 import { sb, hap, iso, monday, shrink, nice, ANGLES, type Angle, type Checkin } from './lib'
 import { Ruler, Hold, useBack, Sheet } from './ui'
-import { useTilt, isLevel, tiltHint, askMotion, unlockAudio, beep, tone } from './level'
-import { loadPose, releasePose, detectVideo, detectPhoto, toCrop, scorePose, defaultRef, luma, tooDark, GOOD, type Pose } from './pose'
+import { unlockAudio, beep, tone } from './level'
+import { loadPose, releasePose, detectVideo, detectPhoto, toCrop, easyScore, type Pose } from './pose'
 import { nowWeight } from './Feed'
 import Cropper from './Cropper'
 
@@ -12,6 +12,8 @@ const p = { sh: 46, wa: 33, hi: 34, ar: 18 }, c = 100
 const BODY = `M${c-11} 76C${c-20} 84 ${c-p.sh+8} 86 ${c-p.sh} 98L${c-p.sh-24} 198C${c-p.sh-24} 204 ${c-p.sh-24+p.ar} 206 ${c-p.sh-22+p.ar} 200L${c-p.sh+12} 126C${c-p.wa-4} 156 ${c-p.wa} 178 ${c-p.wa} 200L${c-p.hi} 246L${c-25} 376H${c-7}L${c} 266L${c+7} 376H${c+25}L${c+p.hi} 246L${c+p.wa} 200C${c+p.wa} 178 ${c+p.wa+4} 156 ${c+p.sh-12} 126L${c+p.sh+22-p.ar} 200C${c+p.sh+24-p.ar} 206 ${c+p.sh+24} 204 ${c+p.sh+24} 198L${c+p.sh} 98C${c+p.sh-8} 86 ${c+20} 84 ${c+11} 76Z`
 
 type Shot = { blob: Blob; url: string }
+const HOLD_MS = 3000 // tempo parado no alvo (tom contínuo) até a foto sair sozinha
+const PAUSE_MS = 4000 // depois de uma foto: tempo pra virar pro próximo ângulo
 
 export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { close: () => void }) {
   const video = useRef<HTMLVideoElement>(null)
@@ -22,9 +24,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   const [angle, setAngle] = useState<Angle>('frente')
   const [shots, setShots] = useState<Partial<Record<Angle, Shot>>>({})
   const [count, setCount] = useState(0)
-  const [ratio, setRatio] = useState('3 / 4')
   const [err, setErr] = useState('')
-  const [go, setGo] = useState(() => { try { return +(localStorage.getItem('frango.go') ?? 0.55) } catch { return 0.55 } })
   const week = iso(monday())
   const mine = data.checkins.filter(x => x.user_id === data.me)
   const existing = mine.find(x => x.week === week)
@@ -33,85 +33,60 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   const [note, setNote] = useState(existing?.note ?? '')
   const [busy, setBusy] = useState(false)
   const [crop, setCrop] = useState<string | null>(null)
-  const [secs, setSecs] = useState(() => { try { return +(localStorage.getItem('frango.timer') ?? 10) } catch { return 10 } })
-  const [motion, setMotion] = useState(false)
-  const [tips, setTips] = useState(() => { try { return !localStorage.getItem('frango.dicas') } catch { return false } })
-  const tilt = useTilt(motion && step === 'cam')
-  const level = isLevel(tilt)
-  const wasLevel = useRef(false)
+  const [tips, setTips] = useState(() => { try { return !localStorage.getItem('frango.dicas2') } catch { return false } })
+  const [sense, setSense] = useState<{ score: number; hint: string; ok: boolean; on: number } | null>(null)
+  const meta = useRef<Partial<Record<Angle, { pose: Pose | null; lum: number }>>>({})
   useBack(close)
 
-  // ---- sensor de ré (pose no aparelho). Se o modelo não carregar, nada disso aparece e o resto segue igual.
-  const flag = (k: string, d: boolean) => { try { const v = localStorage.getItem(k); return v == null ? d : v === '1' } catch { return d } }
-  const [sound, setSound] = useState(() => flag('frango.sound', true))
-  const [auto, setAuto] = useState(() => flag('frango.auto', true))
-  const [sense, setSense] = useState<{ score: number; hint: string; ok: boolean; dark: boolean } | null>(null)
-  const meta = useRef<Partial<Record<Angle, { pose: Pose | null; lum: number }>>>({})
-  const refC = mine.find(x => x.photos.pose?.[angle]) // referência = foto mais antiga desse ângulo
-  const L = useRef({ angle, ref: null as Pose | null, refLum: undefined as number | undefined, tilt: null as typeof tilt, facing, sound, auto, hold: false, taken: false, grab: () => {} })
-  L.current = {
-    angle, ref: refC?.photos.pose?.[angle] ?? null, refLum: refC?.photos.lum?.[angle], tilt, facing, sound, auto,
-    hold: count > 0 || !!crop, taken: !!shots[angle], grab,
-  }
-  function flip(k: string, v: boolean, set: (v: boolean) => void) {
-    unlockAudio(); set(v); hap(6)
-    try { localStorage.setItem(k, v ? '1' : '0') } catch { /* */ }
-  }
+  // referência = pose da foto mais antiga desse ângulo (a 1ª vez usa um alvo padrão, bem solto)
+  const refPose = mine.find(x => x.photos.pose?.[angle])?.photos.pose?.[angle] ?? null
+  // fantasma = última foto sua desse ângulo (de outra semana)
+  const prevPath = [...mine].reverse().find(x => x.photos[angle] && x.week !== week)?.photos[angle]
+  const ghost = prevPath ? data.urls[prevPath] : undefined
+
+  const L = useRef({ angle, ref: refPose, facing, hold: false, done: false, shoot: () => {} })
+  L.current = { angle, ref: refPose, facing, hold: count > 0 || !!crop || tips, done: !!shots[angle], shoot }
+  const pauseUntil = useRef(0)
+
+  // ---- câmera de ré: bip mais rápido conforme encaixa; no alvo, tom contínuo; 3 s parado → foto sozinha
   useEffect(() => {
     if (step !== 'cam') return
-    let dead = false, raf = 0, last = 0, onSince = 0, nextBeep = 0, lumAt = 0, lum = 1, score = -1
-    const cv = document.createElement('canvas'); cv.width = 24; cv.height = 32
+    let dead = false, raf = 0, last = 0, onSince = 0, nextBeep = 0
+    let score = -1, smooth = 0
     let lmk: Awaited<ReturnType<typeof loadPose>> | null = null
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick)
       const s = L.current, v = video.current
       if (!lmk || !v || v.readyState < 2 || !v.videoWidth) return
-      const quiet = s.hold || !s.sound
-      if (score >= 0 && !s.hold) { // bip de ré: quanto maior a nota, mais rápido; no alvo, tom contínuo
-        if (score >= GOOD) { tone(!quiet) }
-        else { tone(false); if (!quiet && now >= nextBeep) { beep(500 + score * 5, 50, 0.12); hap(8); nextBeep = now + 900 - 780 * Math.min(1, score / GOOD) } }
-      } else tone(false)
-      if (now - last < 75) return // ~13 fps
+      const paused = s.hold || s.done || now < pauseUntil.current
+      // som (todo frame, pro ritmo ficar certinho)
+      if (paused || score < 0) tone(false)
+      else if (score >= 50) tone(true)
+      else if (score > 0 && now >= nextBeep) { tone(false); beep(2000, 70); hap(10); nextBeep = now + 1100 - 1000 * (score / 50) } // 1,1 s → 0,1 s
+      else if (score === 0) tone(false) // ninguém na frente: silêncio
+      if (now - last < 90) return // ~11 fps de detecção
       last = now
-      if (s.hold) { onSince = 0; return }
+      if (paused) { onSince = 0; score = -1; return }
       try {
-        if (now - lumAt > 500) { lumAt = now; const g = cv.getContext('2d', { willReadFrequently: true })!; g.drawImage(v, 0, 0, 24, 32); lum = luma(g.getImageData(0, 0, 24, 32).data) }
         const mirror = s.facing === 'user'
         const raw = detectVideo(lmk, v, now)
-        const live = raw && toCrop(raw, v.videoWidth, v.videoHeight, mirror)
-        const r = scorePose(live, s.ref ?? defaultRef(s.angle), s.angle, s.tilt, mirror)
-        score = r.score
-        const hint = r.hint
-        setSense(p => (p && p.score === r.score && p.hint === hint && p.dark === tooDark(lum, s.refLum) ? p : { score: r.score, hint, ok: r.ok, dark: tooDark(lum, s.refLum) }))
-        if (r.ok && s.auto && !s.taken) {
-          onSince ||= now
-          if (now - onSince >= 3000) { onSince = 0; tone(false); beep(1320, 220, 0.25); s.grab() } // 3 s no alvo = foto (o timer vale pro botão)
-        } else onSince = 0
-      } catch { /* modo IMAGE rolando ou frame ruim: pula */ }
+        const r = easyScore(raw && toCrop(raw, v.videoWidth, v.videoHeight, mirror), s.ref, mirror)
+        smooth = r.score === 0 ? 0 : smooth ? smooth * 0.6 + r.score * 0.4 : r.score // tira a tremida da nota
+        score = Math.round(smooth)
+        const ok = score >= 50
+        if (ok) { onSince ||= now } else onSince = 0
+        const on = ok ? Math.min(1, (now - onSince) / HOLD_MS) : 0
+        setSense({ score, hint: ok ? 'Isso! Fica parado' : r.hint, ok, on })
+        if (ok && now - onSince >= HOLD_MS) { onSince = 0; tone(false); s.shoot() }
+      } catch { /* frame ruim: pula */ }
     }
     loadPose().then(m => { if (dead) return; lmk = m; raf = requestAnimationFrame(tick) }).catch(() => {})
     return () => { dead = true; cancelAnimationFrame(raf); tone(false); setSense(null) }
   }, [step, facing])
-  useEffect(() => () => releasePose(), [])
-
-  // bip curto quando o celular fica no nível
-  useEffect(() => {
-    if (level && !wasLevel.current) { beep(1320, 90); hap(15) }
-    wasLevel.current = level
-  }, [level])
-
-  // liga nível + som (iPhone exige que seja dentro de um toque)
-  async function enableSensors() {
-    unlockAudio()
-    if (!motion) { await askMotion(); setMotion(true) } // mesmo se recusar, escuta: se nada chegar, o aviso explica
-  }
-
-  // fantasma = última foto sua desse ângulo (de outra semana)
-  const prevPath = [...mine].reverse().find(x => x.photos[angle] && x.week !== week)?.photos[angle]
-  const ghost = prevPath ? data.urls[prevPath] : undefined
+  useEffect(() => () => { releasePose(); tone(false) }, [])
 
   const stopTimer = () => { clearInterval(timer.current); timer.current = 0; setCount(0) }
-  useEffect(() => () => clearInterval(timer.current), []) // fechou no meio do 3-2-1: para
+  useEffect(() => () => clearInterval(timer.current), [])
 
   useEffect(() => {
     if (step !== 'cam') return
@@ -138,49 +113,49 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
     return () => { dead = true; stopTimer(); stream.current?.getTracks().forEach(t => t.stop()) }
   }, [facing, step])
 
-  function grab() {
+  // foto = exatamente o recorte 3:4 que aparece na tela (sem editor)
+  function shoot() {
     const v = video.current
     if (!v || !v.videoWidth) return
     const vw = v.videoWidth, vh = v.videoHeight
-    const k = Math.min(1, 2000 / Math.max(vw, vh))
+    const cw = Math.min(vw, vh * 0.75), ch = cw * 4 / 3
     const cv = document.createElement('canvas')
-    cv.width = Math.round(vw * k); cv.height = Math.round(vh * k)
+    cv.width = 1200; cv.height = 1600
     const g = cv.getContext('2d')!
-    if (facing === 'user') { g.translate(cv.width, 0); g.scale(-1, 1) }
-    g.drawImage(v, 0, 0, cv.width, cv.height)
-    hap(40)
-    cv.toBlob(b => b && setCrop(URL.createObjectURL(b)), 'image/jpeg', 0.9)
+    if (facing === 'user') { g.translate(1200, 0); g.scale(-1, 1) }
+    g.drawImage(v, (vw - cw) / 2, (vh - ch) / 2, cw, ch, 0, 0, 1200, 1600)
+    beep(2600, 250, 0.6); hap([30, 40, 80])
+    cv.toBlob(b => b && addShot(b), 'image/jpeg', 0.88)
   }
 
-  // toda foto passa pelo editor (recorte 3:4 igual pra todas → antes/depois alinha)
   function addShot(blob: Blob) {
     setCrop(null)
     const a = angle
     meta.current[a] = undefined
-    loadPose().then(m => detectPhoto(m, blob)).then(r => { meta.current[a] = r }).catch(() => {}) // pose da foto FINAL recortada
-    setShots(s => ({ ...s, [angle]: { blob, url: URL.createObjectURL(blob) } }))
-    hap(40)
-    const next = ANGLES.find(a => a !== angle && !shots[a])
-    if (next) setTimeout(() => setAngle(next), 450)
+    loadPose().then(m => detectPhoto(m, blob)).then(r => { meta.current[a] = r }).catch(() => {}) // pose da foto final (vira a referência)
+    const next = { ...shots, [a]: { blob, url: URL.createObjectURL(blob) } }
+    setShots(next)
+    const rest = ANGLES.filter(x => !next[x])
+    if (!rest.length) { setTimeout(() => setStep('form'), 900); return } // 3 fotos → peso e nota
+    pauseUntil.current = performance.now() + PAUSE_MS
+    setTimeout(() => setAngle(rest[0]), 700)
+    toast(`Agora de ${rest[0]}`)
   }
 
-  async function countdown() {
+  // botão: 3-2-1 e foto (pra quem quer tirar na mão)
+  function countdown() {
+    unlockAudio()
     if (timer.current || err) return
-    await enableSensors()
-    let n = secs
-    setCount(n); hap(); beep(660)
+    let n = 3
+    setCount(n); beep(1600, 90)
     timer.current = window.setInterval(() => {
       n--
-      if (n === 0) { stopTimer(); beep(1320, 220, 0.25); grab() }
-      else { setCount(n); hap(); beep(n <= 3 ? 990 : 660) }
+      if (n === 0) { stopTimer(); shoot() }
+      else { setCount(n); beep(1600, 90) }
     }, 1000)
   }
-  function pickSecs(s: number) {
-    setSecs(s); hap(6)
-    try { localStorage.setItem('frango.timer', String(s)) } catch { /* */ }
-  }
 
-  // galeria ou câmera nativa do celular → editor
+  // galeria → editor de recorte
   async function native(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     e.target.value = ''
@@ -224,6 +199,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   }
 
   const n = Object.keys(shots).length
+  const closeTips = () => { unlockAudio(); setTips(false); try { localStorage.setItem('frango.dicas2', '1') } catch { /* */ } }
 
   return (
     <div className="overlay">
@@ -235,51 +211,24 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
             <button className={'ib' + (n ? ' g' : '')} onClick={() => { stopTimer(); setStep('form'); hap(8) }}>{n ? 'Próximo' : 'Pular'}</button>
           </div>
 
-          <div className="frame" style={{ aspectRatio: ratio }}>
-            <video ref={video} playsInline muted autoPlay className={facing === 'user' ? 'mirror' : ''}
-              onLoadedMetadata={e => setRatio(`${e.currentTarget.videoWidth} / ${e.currentTarget.videoHeight}`)}
-              onResize={e => setRatio(`${e.currentTarget.videoWidth} / ${e.currentTarget.videoHeight}`)} />
-            {ghost && <img src={ghost} className="ghost" alt="" style={{ opacity: go }} />}
+          <div className="frame">
+            <video ref={video} playsInline muted autoPlay className={facing === 'user' ? 'mirror' : ''} />
+            {ghost && <img src={ghost} className="ghost" alt="" />}
             <svg viewBox="0 0 200 400" className={'outline' + (sense?.ok ? ' on' : '')} aria-hidden="true"><circle cx="100" cy="50" r="23" /><path d={BODY} /></svg>
             {shots[angle] && <img src={shots[angle]!.url} className="taken" alt="" />}
-            {motion && tilt && (
-              <div className={'level' + (level ? ' ok' : '')} aria-label={tiltHint(tilt)}>
-                <i style={{ transform: `translate(${Math.max(-26, Math.min(26, tilt.roll * 3))}px, ${Math.max(-26, Math.min(26, tilt.pitch * 3))}px)` }} />
-              </div>
-            )}
-            {sense && (
-              <div className={'sense' + (sense.ok ? ' ok' : '')}>
-                <b>{sense.score}</b><i><u style={{ width: sense.score + '%' }} /></i><span>{sense.hint}</span>
-                {sense.dark && <em>Tá mais escuro que da outra vez</em>}
-              </div>
-            )}
             {count > 0 && <div className="count" key={count}>{count}</div>}
             {err && <div className="err">{err}</div>}
           </div>
 
-          <p className={'level-hint' + (level ? ' ok' : '')}>
-            {!motion ? <button className="wk" onClick={enableSensors}>Ligar o nível (giroscópio)</button> : tilt ? tiltHint(tilt) : 'Esse celular não mandou o nível.'}
-            {' · '}<button className="wk" onClick={() => { setTips(true); hap(6) }}>Dicas de posição</button>
-          </p>
-          <div className="chips timer-chips" aria-label="Timer">
-            {[3, 5, 10].map(s => <button key={s} className={s === secs ? 'on' : ''} onClick={() => pickSecs(s)}>{s}s</button>)}
+          {/* status: uma frase grande + barra que enche conforme encaixa */}
+          <div className={'radar' + (sense?.ok ? ' ok' : '')}>
+            <b>{sense ? (shots[angle] ? '✓ Foto tirada' : sense.hint) : 'Carregando o sensor…'}</b>
+            <i><u style={{ width: `${sense ? (sense.ok ? 100 : sense.score * 2) : 0}%` }} /></i>
+            {sense?.ok && !shots[angle] && <small>Tirando em {Math.ceil(3 - sense.on * 3)}…</small>}
           </div>
-
-          <div className="chips timer-chips" aria-label="Sensor">
-            <button className={sound ? 'on' : ''} onClick={() => flip('frango.sound', !sound, setSound)}>Som {sound ? 'on' : 'off'}</button>
-            <button className={auto ? 'on' : ''} onClick={() => flip('frango.auto', !auto, setAuto)}>Auto {auto ? 'on' : 'off'}</button>
-          </div>
-
-          {ghost && (
-            <label className="ghost-ctl">
-              <span>Fantasma</span>
-              <input type="range" className="fade" min={0.15} max={0.9} step={0.05} value={go}
-                onChange={e => { const v = +e.target.value; setGo(v); hap(5); try { localStorage.setItem('frango.go', String(v)) } catch { /* */ } }} />
-            </label>
-          )}
 
           <div className="chips">
-            {ANGLES.map(a => <button key={a} className={(a === angle ? 'on ' : '') + (shots[a] ? 'done' : '')} onClick={() => { setAngle(a); hap(6) }}>{shots[a] ? '✓ ' : ''}{a}</button>)}
+            {ANGLES.map(a => <button key={a} className={(a === angle ? 'on ' : '') + (shots[a] ? 'done' : '')} onClick={() => { setAngle(a); hap(6); pauseUntil.current = performance.now() + 1500 }}>{shots[a] ? '✓ ' : ''}{a}</button>)}
           </div>
 
           <div className="row">
@@ -287,9 +236,10 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
               <input type="file" accept="image/*" onChange={native} hidden />
               Galeria
             </label>
-            <button className="shoot" onClick={countdown} aria-label="Tirar foto" disabled={count > 0 || !!err} />
+            <button className="shoot" onClick={countdown} aria-label="Tirar foto agora" disabled={count > 0 || !!err} />
             <button className="ib" onClick={() => { stopTimer(); setFacing(f => (f === 'user' ? 'environment' : 'user')); hap(8) }}>Virar</button>
           </div>
+          <button className="wk" onClick={() => { setTips(true); hap(6) }}>Como funciona?</button>
         </div>
       ) : (
         <div className="sheet">
@@ -310,16 +260,15 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
         </div>
       )}
       {tips && (
-        <Sheet onClose={() => { setTips(false); try { localStorage.setItem('frango.dicas', '1') } catch { /* */ } }}>
-          <h3 className="sheet-h">Foto igual toda semana</h3>
+        <Sheet onClose={closeTips}>
+          <h3 className="sheet-h">Igual câmera de ré</h3>
           <ol className="steps">
-            <li><span className="n">1</span><span><b>Celular em pé e reto</b>, apoiado ou preso na parede (fita serve). Usa o nível: bolha verde no meio.</span></li>
-            <li><span className="n">2</span><span><b>Altura do umbigo / logo abaixo do peito.</b> Mais baixo estica as pernas, mais alto aumenta a cabeça.</span></li>
-            <li><span className="n">3</span><span><b>2 a 3 metros</b> de distância, corpo inteiro no contorno. Câmera <b>1x</b>, nunca a grande-angular (0,5x).</span></li>
-            <li><span className="n">4</span><span><b>Sempre o mesmo lugar, a mesma luz e a mesma hora</b> (segunda de manhã, em jejum). Luz de frente, não de trás.</span></li>
-            <li><span className="n">5</span><span>Marca no chão onde ficam teus pés e onde fica o celular. Assim as fotos saem iguais.</span></li>
+            <li><span className="n">1</span><span><b>Apoia o celular em pé</b> mais ou menos na altura do umbigo e liga o volume.</span></li>
+            <li><span className="n">2</span><span><b>Afasta e se encaixa no contorno.</b> Não precisa aparecer o pé: ombro e quadril bastam.</span></li>
+            <li><span className="n">3</span><span><b>Bip lento = longe. Bip rápido = quase.</b> Bip contínuo = certo: fica parado 3 segundos e a foto sai sozinha.</span></li>
+            <li><span className="n">4</span><span>Aí <b>vira de lado</b>, depois <b>de costas</b>. Mesma coisa. As semanas seguintes usam a 1ª foto como referência.</span></li>
           </ol>
-          <button className="btn big" onClick={() => { setTips(false); try { localStorage.setItem('frango.dicas', '1') } catch { /* */ } enableSensors() }}>Entendi, ligar o nível</button>
+          <button className="btn big" onClick={closeTips}>Bora</button>
         </Sheet>
       )}
       {crop && <Cropper src={crop} aspect={3 / 4} outW={1200} title={`Ajustar · ${angle}`} onDone={addShot} onCancel={() => setCrop(null)} />}
