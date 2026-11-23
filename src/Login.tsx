@@ -19,8 +19,8 @@ export default function Login() {
       // primeiro acesso: a conta nasce aqui (o banco só aceita ricardo, gabriel e sara)
       if (error?.message.includes('Invalid login')) {
         const r = await sb.auth.signUp({ email, password })
-        if (r.error?.message.includes('already registered')) msg = 'Senha errada.'
-        else if (r.error) msg = /cadastro fechado|Database error/.test(r.error.message) ? 'Esse usuário não existe. Só ricardo, gabriel e sara.' : nice(r.error)
+        if (r.error?.message.includes('already registered')) msg = 'Nome ou senha errados.'
+        else if (r.error) msg = /cadastro fechado|Database error/.test(r.error.message) ? 'Nome ou senha errados.' : nice(r.error)
         else if (!r.data.session) msg = 'Conta criada, mas o login precisa de confirmação no Supabase.'
       } else if (error) msg = nice(error)
     } catch (er) { msg = nice(er) }
@@ -37,11 +37,11 @@ export default function Login() {
       </div>
       <label className="field">
         <span>Usuário</span>
-        <input value={user} onChange={e => setUser(e.target.value)} autoCapitalize="none" autoCorrect="off" autoComplete="username" placeholder="ricardo, gabriel ou sara" />
+        <input value={user} onChange={e => setUser(e.target.value)} autoCapitalize="none" autoCorrect="off" autoComplete="username" placeholder="nome" />
       </label>
       <label className="field">
         <span>Senha</span>
-        <input value={pin} onChange={e => setPin(e.target.value)} type="password" inputMode="numeric" autoComplete="current-password" placeholder="tua senha" enterKeyHint="go" />
+        <input value={pin} onChange={e => setPin(e.target.value)} type="password" autoComplete="current-password" placeholder="senha" enterKeyHint="go" />
       </label>
       {err && <p className="err-msg">{err}</p>}
       <button className="btn big" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
