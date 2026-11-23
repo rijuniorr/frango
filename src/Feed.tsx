@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { Ctx } from './App'
-import { sb, hap, fmtKg, fmtDate, iso, monday, weekStats, avatarOf, nice, ANGLES, type Angle, type Checkin } from './lib'
-import { Compare, Avatar, Confirm } from './ui'
+import { sb, hap, ordered, fmtKg, fmtDate, iso, monday, weekStats, avatarOf, nice, ANGLES, type Angle, type Checkin } from './lib'
+import { Compare, Avatar, Confirm, Seg } from './ui'
 
 const DOW = ['S', 'T', 'Q', 'Q', 'S', 'S', 'D']
 
@@ -12,12 +12,12 @@ export const nowWeight = (ctx: Pick<Ctx, 'data'>, uid: string) => {
 }
 
 export default function Feed(ctx: Ctx) {
-  const { data, openCheckin } = ctx
+  const { data, openCheckin, partners, partner, setPartner } = ctx
   const week = iso(monday())
   const first = data.checkins[0]?.week
   const n = first ? Math.round((monday().getTime() - new Date(first + 'T00:00').getTime()) / (7 * 864e5)) + 1 : 1
   const posted = data.checkins.some(c => c.user_id === data.me && c.week === week)
-  const people = [...data.profiles].sort((a, b) => b.username.localeCompare(a.username)) // ricardo, gabriel
+  const people = ordered(data)
 
   return (
     <>
@@ -25,6 +25,8 @@ export default function Feed(ctx: Ctx) {
         <span className="logo brand"><img src="./logo.png" alt="" /><span>frangos<i>.</i></span></span>
         <span className="pill">Semana {Math.max(1, n)}</span>
       </header>
+
+      {partners.length > 1 && <div className="dupla-seg"><Seg value={partner ?? ''} onChange={setPartner} options={partners.map(p => [p.username, 'Com ' + p.name] as [string, string])} /></div>}
 
       <section className="duo">
         {people.map(p => {
@@ -131,7 +133,7 @@ function Post({ c, data, mutate, toast }: { c: Checkin } & Ctx) {
       {del && <Confirm title="Excluir esse post?" text="As fotos, o peso, curtidas e comentários desse check-in somem pra sempre." yes="Excluir" onYes={remove} onClose={() => setDel(false)} />}
       <div className="post-top">
         <Avatar name={p?.name ?? '?'} mine={c.user_id === data.me} src={avatarOf(data, c.user_id)} size={36} />
-        <div><b>{p?.name}</b><span>Semana de {fmtDate(c.week)} · check-in {i + 1}{c.photos.tag ? (c.photos.tag === 'pre' ? ' · pré-treino' : ' · pós-treino') : ''}</span></div>
+        <div><b>{p?.name}</b><span>Semana de {fmtDate(c.week)} · check-in {i + 1}{c.user_id === data.me && c.audience ? ' · só ' + c.audience.map(u => data.profiles.find(x => x.username === u)?.name ?? u).join(', ') : ''}{c.photos.tag ? (c.photos.tag === 'pre' ? ' · pré-treino' : ' · pós-treino') : ''}</span></div>
         {c.user_id === data.me && <button className="post-del" onClick={() => { setDel(true); hap(8) }} aria-label="Excluir post"><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" /></svg></button>}
       </div>
 

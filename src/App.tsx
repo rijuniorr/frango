@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { sb, load, hap, gesture, type Data } from './lib'
+import { sb, load, hap, gesture, ordered, type Data, type Profile } from './lib'
 import Login from './Login'
 import Feed from './Feed'
 import Hoje from './Hoje'
@@ -10,7 +10,11 @@ import Eu from './Eu'
 import Install from './Install'
 
 export type Ctx = {
-  data: Data
+  data: Data // já filtrado pra dupla escolhida
+  all: Data // tudo que o banco devolveu (só o check-in usa)
+  partners: Profile[] // quem eu enxergo; 2+ = tem seletor
+  partner: string | null // username do parceiro da vez
+  setPartner: (u: string) => void
   reload: () => Promise<void>
   mutate: (fn: (d: Data) => Data) => void // muda na tela na hora, antes do banco responder
   toast: (msg: string, kind?: 'ok' | 'roast' | 'err') => void
@@ -26,6 +30,17 @@ const TABS = [
 ] as const
 const PAGES = [Feed, Hoje, Evolucao, Eu]
 
+// só {eu, parceiro}: perfis, check-ins (respeitando audience), dias, curtidas e comentários
+export function view(data: Data, partnerId: string | null): Data {
+  const others = data.profiles.filter(p => p.id !== data.me)
+  const pt = others.find(p => p.id === partnerId) ?? others[0]
+  if (others.length < 2 || !pt) return data
+  const ids = new Set([data.me, pt.id])
+  const checkins = data.checkins.filter(c => ids.has(c.user_id) && (c.user_id === pt.id || !c.audience || c.audience.includes(pt.username)))
+  const cs = new Set(checkins.map(c => c.id))
+  return { ...data, profiles: data.profiles.filter(p => ids.has(p.id)), checkins, days: data.days.filter(d => ids.has(d.user_id)), likes: data.likes.filter(l => cs.has(l.checkin_id)), comments: data.comments.filter(c => cs.has(c.checkin_id)) }
+}
+
 type Msg = { text: string; kind: 'ok' | 'roast' | 'err'; id: number }
 
 export default function App() {
@@ -33,6 +48,7 @@ export default function App() {
   const [data, setData] = useState<Data | null>(null)
   const [ti, setTi] = useState(0)
   const [cam, setCam] = useState(false)
+  const [dupla, setDupla] = useState(() => { try { return localStorage.getItem('frango.dupla') } catch { return null } })
   const [msg, setMsg] = useState<Msg | null>(null)
   const queue = useRef<Msg[]>([])
   const pager = useRef<HTMLDivElement>(null)
@@ -41,7 +57,7 @@ export default function App() {
 
   useEffect(() => {
     if (import.meta.env.DEV && location.search.includes('demo')) {
-      import('./demo').then(m => { setSession({ user: { id: 'r' } } as Session); setData(m.demo()) })
+      import('./demo').then(m => { setSession({ user: { id: 'demo' } } as Session); setData(m.demo(location.search.includes('sara'))) })
       return
     }
     sb.auth.getSession().then(({ data }) => setSession(data.session))
@@ -51,13 +67,13 @@ export default function App() {
 
   const uid = session?.user.id
   const reload = useCallback(async () => {
-    if (!uid || uid === 'r') return
+    if (!uid || uid === 'demo') return
     try { setData(await load(uid)) } catch { /* sem rede: mantém o que tem */ }
   }, [uid])
   const mutate = useCallback((fn: (d: Data) => Data) => setData(d => (d ? fn(d) : d)), [])
 
   useEffect(() => {
-    if (uid === 'r') return // demo
+    if (uid === 'demo') return // demo
     if (!uid) { setData(null); return }
     reload()
     // o que o OUTRO faz aparece na hora; o que eu faço já está na tela (otimista).
@@ -76,6 +92,10 @@ export default function App() {
     const hourly = setInterval(() => document.visibilityState === 'visible' && reload(), 3600e3) // renova links das fotos
     return () => { sb.removeChannel(ch); document.removeEventListener('visibilitychange', vis); clearInterval(hourly); clearTimeout(t) }
   }, [uid, reload])
+
+  // tema rosa só pra Sara
+  const meName = data?.profiles.find(p => p.id === data.me)?.username
+  useEffect(() => { if (meName === 'sara') document.documentElement.dataset.theme = 'rosa'; else delete document.documentElement.dataset.theme }, [meName])
 
   // avisos: um xingamento não é atropelado por outro aviso (fila)
   const toast = useCallback((text: string, kind: Msg['kind'] = 'ok') => {
@@ -144,7 +164,10 @@ export default function App() {
   if (!session) return <><Login /><Install /></>
   if (!data) return <div className="splash"><img src="./logo.png" alt="" className="splash-logo pulse" /></div>
 
-  const base = { data, reload, mutate, toast, openCheckin: () => { setCam(true); hap(10) } }
+  const partners = ordered(data).filter(p => p.id !== data.me)
+  const pt = partners.find(p => p.username === dupla) ?? partners[0]
+  const setPartner = (u: string) => { setDupla(u); hap(8); try { localStorage.setItem('frango.dupla', u) } catch { /* sem storage: vale só nessa sessão */ } }
+  const base = { data: view(data, pt?.id ?? null), all: data, partners, partner: pt?.username ?? null, setPartner, reload, mutate, toast, openCheckin: () => { setCam(true); hap(10) } }
 
   return (
     <>

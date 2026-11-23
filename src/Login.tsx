@@ -16,11 +16,11 @@ export default function Login() {
     let msg = ''
     try {
       const { error } = await sb.auth.signInWithPassword({ email, password })
-      // primeiro acesso: a conta nasce aqui (o banco só aceita ricardo e gabriel)
+      // primeiro acesso: a conta nasce aqui (o banco só aceita ricardo, gabriel e sara)
       if (error?.message.includes('Invalid login')) {
         const r = await sb.auth.signUp({ email, password })
         if (r.error?.message.includes('already registered')) msg = 'Senha errada.'
-        else if (r.error) msg = /cadastro fechado|Database error/.test(r.error.message) ? 'Esse usuário não existe. Só ricardo e gabriel.' : nice(r.error)
+        else if (r.error) msg = /cadastro fechado|Database error/.test(r.error.message) ? 'Esse usuário não existe. Só ricardo, gabriel e sara.' : nice(r.error)
         else if (!r.data.session) msg = 'Conta criada, mas o login precisa de confirmação no Supabase.'
       } else if (error) msg = nice(error)
     } catch (er) { msg = nice(er) }
@@ -37,7 +37,7 @@ export default function Login() {
       </div>
       <label className="field">
         <span>Usuário</span>
-        <input value={user} onChange={e => setUser(e.target.value)} autoCapitalize="none" autoCorrect="off" autoComplete="username" placeholder="ricardo ou gabriel" />
+        <input value={user} onChange={e => setUser(e.target.value)} autoCapitalize="none" autoCorrect="off" autoComplete="username" placeholder="ricardo, gabriel ou sara" />
       </label>
       <label className="field">
         <span>Senha</span>

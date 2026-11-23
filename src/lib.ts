@@ -20,7 +20,7 @@ export const KINDS: [string, string][] = [
   ['funcional', '🔥 Funcional'], ['alongamento', '🧘 Alongamento'],
 ]
 export const kindLabel = (k: string) => KINDS.find(x => x[0] === k)?.[1] ?? k
-export type Checkin = { id: string; user_id: string; week: string; weight: number | null; note: string | null; photos: Partial<Record<Angle, string>> & { pose?: Partial<Record<Angle, import('./pose').Pose>>; lum?: Partial<Record<Angle, number>>; tag?: 'pre' | 'pos' }; created_at: string }
+export type Checkin = { id: string; user_id: string; week: string; weight: number | null; note: string | null; photos: Partial<Record<Angle, string>> & { pose?: Partial<Record<Angle, import('./pose').Pose>>; lum?: Partial<Record<Angle, number>>; tag?: 'pre' | 'pos' }; created_at: string; audience?: string[] | null }
 export type Like = { checkin_id: string; user_id: string }
 export type Comment = { id: string; checkin_id: string; user_id: string; body: string; created_at: string }
 
@@ -34,6 +34,9 @@ export type Data = {
   comments: Comment[]
   urls: Record<string, string> // caminho da foto → link assinado
 }
+
+// admin (Ricardo) primeiro, depois os outros por nome: ordem estável pra todo mundo
+export const ordered = (data: Data) => [...data.profiles].sort((a, b) => Number(b.is_admin) - Number(a.is_admin) || a.username.localeCompare(b.username))
 
 export const avatarOf = (data: Data, uid: string) => { const a = data.profiles.find(p => p.id === uid)?.avatar; return a ? data.urls[a] : undefined }
 

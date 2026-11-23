@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { alignTransform, alignCss, type Pose } from './pose'
 import type { Ctx } from './App'
-import { hap, fmtKg, fmtDate, gesture, ANGLES, type Angle, type Data, type Profile } from './lib'
+import { hap, ordered, fmtKg, fmtDate, gesture, ANGLES, type Angle, type Data, type Profile } from './lib'
 import { Compare, Seg } from './ui'
 import { nowWeight } from './Feed'
 
-// abas pelos nomes: Ricardo | Gabriel | Lado a lado
-const NAMES: [string, string][] = [['ricardo', 'Ricardo'], ['gabriel', 'Gabriel']]
+// abas pelos nomes de quem aparece nos dados (eu + parceiro) | Lado a lado
 
 export default function Evolucao({ data, active }: Ctx) {
+  const ps = ordered(data)
   const mine = data.profiles.find(p => p.id === data.me)?.username ?? 'ricardo'
-  const [view, setView] = useState<string>(mine)
+  const [sel, setView] = useState<string>(mine)
+  const view = sel === 'dupla' || ps.some(p => p.username === sel) ? sel : mine // trocou de dupla: volta pra mim
   const [angle, setAngle] = useState<Angle>('frente')
   const who = data.profiles.find(p => p.username === view)
 
@@ -19,7 +20,7 @@ export default function Evolucao({ data, active }: Ctx) {
       <header className="bar">
         <h1 className="title">evolução<i>.</i></h1>
       </header>
-      <Seg value={view} onChange={setView} options={[...NAMES.map(([u, n]) => [u, data.profiles.find(p => p.username === u)?.name ?? n] as [string, string]), ['dupla', 'Lado a lado']]} />
+      <Seg value={view} onChange={setView} options={[...ps.map(p => [p.username, p.name] as [string, string]), ['dupla', 'Lado a lado']]} />
 
       <div className="chips">
         {ANGLES.map(a => <button key={a} className={a === angle ? 'on' : ''} onClick={() => { setAngle(a); hap(6) }}>{a}</button>)}
@@ -70,7 +71,7 @@ function Solo({ data, p, angle, active }: { data: Data; p: Profile; angle: Angle
 }
 
 function Dupla({ data, angle }: { data: Data; angle: Angle }) {
-  const ps = [...data.profiles].sort((a, b) => b.username.localeCompare(a.username))
+  const ps = ordered(data)
   return (
     <>
       <h2 className="h">Mais recente</h2>

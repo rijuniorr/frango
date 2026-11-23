@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Ctx } from './App'
-import { sb, hap, fmtKg, iso, avatarOf, shrink, kindLabel, nice } from './lib'
+import { sb, hap, passOf, fmtKg, iso, avatarOf, shrink, kindLabel, nice } from './lib'
 import { Avatar, Confirm } from './ui'
 import { nowWeight } from './Feed'
 import Cropper from './Cropper'
@@ -20,6 +20,9 @@ export default function Eu(ctx: Ctx) {
   const [saving, setSaving] = useState(false)
   const [crop, setCrop] = useState<string | null>(null)
   const [bye, setBye] = useState(false)
+  const [pw, setPw] = useState('')
+  const [pwBusy, setPwBusy] = useState(false)
+  const admin = data.profiles.find(p => p.is_admin)?.name ?? 'o admin'
   const w = num(weight), g = num(goal), h = num(height)
   const bmi = w && h ? w / (h / 100) ** 2 : null
   const standalone = matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone
@@ -32,6 +35,15 @@ export default function Eu(ctx: Ctx) {
     if (error) return toast('Não salvou. ' + nice(error), 'err')
     await reload()
     toast('Perfil salvo.')
+  }
+
+  async function changePw() {
+    if (pw.trim().length < 2 || pwBusy) return toast('Mínimo 2 caracteres.', 'err')
+    setPwBusy(true); hap(10)
+    const { error } = await sb.auth.updateUser({ password: passOf(pw.trim()) })
+    setPwBusy(false)
+    if (error) return toast('Não trocou. ' + nice(error), 'err')
+    setPw(''); toast('Senha trocada.')
   }
 
   // escolheu a foto → abre o editor (recorte redondo)
@@ -135,7 +147,13 @@ export default function Eu(ctx: Ctx) {
       <div className="card form">
         <Step label="Treinos que pode furar" v={data.settings.max_skips} on={v => setLimit('max_skips', v)} lock={!me.is_admin} />
         <Step label="Besteiras liberadas" v={data.settings.max_junk} on={v => setLimit('max_junk', v)} lock={!me.is_admin} />
-        <p className="hint">{me.is_admin ? 'Passou do limite, o app xinga. Sem dó.' : 'Só o Ricardo muda as regras. Passou do limite, o app xinga.'}</p>
+        <p className="hint">{me.is_admin ? 'Passou do limite, o app xinga. Sem dó.' : `Só ${admin} muda as regras. Passou do limite, o app xinga.`}</p>
+      </div>
+
+      <h2 className="h">Trocar senha</h2>
+      <div className="card form">
+        <label className="field"><span>Nova senha</span><input value={pw} onChange={e => setPw(e.target.value)} type="password" maxLength={30} autoComplete="new-password" placeholder="curta, tipo a de entrar" enterKeyHint="done" /></label>
+        <button className="btn" onClick={changePw} disabled={pwBusy}>{pwBusy ? 'Trocando…' : 'Trocar senha'}</button>
       </div>
 
       <div className="card list">

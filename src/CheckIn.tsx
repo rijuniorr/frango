@@ -15,7 +15,7 @@ type Shot = { blob: Blob; url: string }
 const HOLD_MS = 3000 // tempo parado no alvo (tom contínuo) até a foto sair sozinha
 const PAUSE_MS = 4000 // depois de uma foto: tempo pra virar pro próximo ângulo
 
-export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { close: () => void }) {
+export default function CheckIn({ all: data, reload, mutate, toast, close }: Ctx & { close: () => void }) {
   const video = useRef<HTMLVideoElement>(null)
   const stream = useRef<MediaStream | null>(null)
   const timer = useRef(0)
@@ -33,6 +33,8 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
   const [note, setNote] = useState(existing?.note ?? '')
   const [tag, setTag] = useState<'pre' | 'pos' | null>(existing?.photos.tag ?? null)
   const [noWeight, setNoWeight] = useState(existing ? existing.weight == null : false)
+  const others = data.profiles.filter(p => p.id !== data.me)
+  const [aud, setAud] = useState<string[]>(() => existing?.audience ?? others.map(p => p.username))
   const [busy, setBusy] = useState(false)
   const [crop, setCrop] = useState<string | null>(null)
   const [tips, setTips] = useState(() => { try { return !localStorage.getItem('frango.dicas3') } catch { return false } })
@@ -201,7 +203,7 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
       if (Object.keys(pose).length) { photos.pose = pose; photos.lum = lum } else { delete photos.pose; delete photos.lum }
       if (tag) photos.tag = tag; else delete photos.tag
       const w = noWeight ? null : weight
-      const { error } = await sb.from('checkins').upsert({ user_id: data.me, week, weight: w, note: note.trim() || null, photos }, { onConflict: 'user_id,week' })
+      const { error } = await sb.from('checkins').upsert({ user_id: data.me, week, weight: w, note: note.trim() || null, photos, ...(others.length > 1 ? { audience: aud.length === others.length ? null : aud } : {}) }, { onConflict: 'user_id,week' })
       if (error) throw error
       if (replaced.length) sb.storage.from('fotos').remove(replaced) // foto trocada na mesma semana: apaga a velha
       if (w != null) { // "peso atual" acompanha o check-in (se pesou)
@@ -283,6 +285,12 @@ export default function CheckIn({ data, reload, mutate, toast, close }: Ctx & { 
           <div className="chips"><button className={noWeight ? 'on' : ''} onClick={() => { setNoWeight(v => !v); hap(6) }}>{noWeight ? 'Sem peso hoje ✓' : 'Não pesei hoje'}</button></div>
           {!noWeight && <Ruler value={weight} onChange={setWeight} />}
           {!noWeight && lastW != null && <p className="hint center">{weight - lastW === 0 ? 'Igual à última.' : `${weight - lastW > 0 ? '+' : ''}${(weight - lastW).toFixed(1).replace('.', ',')} kg desde a última.`}</p>}
+          {others.length > 1 && <>
+            <h2 className="h center">Quem vê</h2>
+            <div className="chips">
+              {others.map(p => <button key={p.id} className={aud.includes(p.username) ? 'on' : ''} onClick={() => { setAud(a => (a.includes(p.username) ? (a.length > 1 ? a.filter(x => x !== p.username) : a) : [...a, p.username])); hap(6) }}>{p.name}</button>)}
+            </div>
+          </>}
           <h2 className="h">Como foi a semana?</h2>
           <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Supino 70, dieta ok, churrasco no sábado…" maxLength={280} rows={3} />
           <div className="hold-dock">
