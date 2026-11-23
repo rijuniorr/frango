@@ -197,7 +197,7 @@ export default function App() {
         </button>
       </nav>
 
-      {cam && <CheckIn {...base} active close={() => setCam(false)} />}
+      {cam && <CheckIn {...base} data={data} active close={() => setCam(false)} />}{/* check-in vê TODOS os meus dados (público do post e post da semana), não só a dupla da vez */}
       <Install />
 
       {msg && (
