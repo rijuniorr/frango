@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import type { Ctx } from './App'
-import { sb, hap, today, weekDays, weekStats, roast, nice, cap, addDays, KINDS, kindLabel, type Day } from './lib'
+import { sb, hap, today, weekDays, weekStats, roast, nice, cap, addDays, shrink, KINDS, kindLabel, type Day } from './lib'
 import { Sheet } from './ui'
 
 const DOW = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom']
 
 export default function Hoje({ data, reload, mutate, toast }: Ctx) {
+  const [note, setNote] = useState('')
+  const [shot, setShot] = useState<{ blob: Blob; url: string } | null | 'del'>(null) // foto nova do treino (ou 'del' = tirar a foto)
+  const [sending, setSending] = useState(false)
   // só guarda o dia que a pessoa ESCOLHEU; sem escolha = hoje (de verdade, mesmo com o app aberto desde ontem)
   const [picked, setPicked] = useState<string | null>(null)
   const [back, setBack] = useState(false) // olhando a semana passada
@@ -31,7 +34,8 @@ export default function Hoje({ data, reload, mutate, toast }: Ctx) {
 
   async function save(patch: Partial<Day>) {
     const prev = cur
-    const next: Day = { user_id: data.me, day, trained: cur?.trained ?? null, junk: cur?.junk ?? 0, kinds: cur?.kinds ?? [], ...patch }
+    const next: Day = { user_id: data.me, day, trained: cur?.trained ?? null, junk: cur?.junk ?? 0, kinds: cur?.kinds ?? [], note: cur?.note ?? null, photo: cur?.photo ?? null, ...patch }
+    if (next.trained !== true) { next.note = null; next.photo = null } // furou/desmarcou: some do post
     // tela muda na hora; o banco vem depois
     mutate(d => ({ ...d, days: [...d.days.filter(x => !(x.user_id === data.me && x.day === day)), next] }))
     const skips = s.skips - (cur?.trained === false ? 1 : 0) + (next.trained === false ? 1 : 0)
@@ -40,6 +44,7 @@ export default function Hoje({ data, reload, mutate, toast }: Ctx) {
     else if (patch.junk != null && patch.junk > (cur?.junk ?? 0) && junk > max_junk) toast(roast('junk'), 'roast')
     else if (patch.trained === true) toast('Boa, frango. Menos frango a cada dia.')
     const { error } = await sb.from('days').upsert({ ...next, updated_at: new Date().toISOString() })
+    if (!error && cur?.photo && cur.photo !== next.photo) sb.storage.from('fotos').remove([cur.photo]) // não acumula foto velha
     if (error) {
       // desfaz e avisa (o aviso entra na fila, não apaga a bronca)
       mutate(d => ({ ...d, days: [...d.days.filter(x => !(x.user_id === data.me && x.day === day)), ...(prev ? [prev] : [])] }))
@@ -47,6 +52,39 @@ export default function Hoje({ data, reload, mutate, toast }: Ctx) {
       reload()
     }
   }
+
+  function open() {
+    hap(10)
+    setPick(cur?.trained ? cur.kinds ?? [] : [])
+    setNote(cur?.trained ? cur.note ?? '' : '')
+    setShot(null)
+  }
+
+  async function pickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    try { const blob = await shrink(f, 1600); setShot({ blob, url: URL.createObjectURL(blob) }) } catch (er) { toast(nice(er), 'err') }
+  }
+
+  // marcar treino: sobe a foto (se tiver) e salva categorias + observação
+  async function mark() {
+    if (!pick?.length || sending) return
+    let photo = shot === 'del' ? null : cur?.trained ? cur.photo ?? null : null
+    if (shot && shot !== 'del') {
+      setSending(true)
+      const path = `${data.me}/treino-${day}-${Date.now()}.jpg`
+      const r = await sb.storage.from('fotos').upload(path, shot.blob, { contentType: 'image/jpeg' })
+      setSending(false)
+      if (r.error) return toast('Foto não subiu. ' + nice(r.error), 'err')
+      mutate(d => ({ ...d, urls: { ...d.urls, [path]: shot.url } }))
+      photo = path
+    }
+    save({ trained: true, kinds: pick, note: note.trim() || null, photo })
+    setPick(null)
+  }
+
+  const shown = shot === 'del' ? undefined : shot ? shot.url : cur?.trained && cur.photo ? data.urls[cur.photo] : undefined
 
   const label = day === now ? 'Hoje' : cap(DOW[wd.indexOf(day)])
 
@@ -76,7 +114,7 @@ export default function Hoje({ data, reload, mutate, toast }: Ctx) {
 
       <h2 className="h">{label === 'Hoje' ? 'Hoje você treinou?' : `${label} você treinou?`}</h2>
       <div className="yesno">
-        <button className={'card big-q yes' + (cur?.trained === true ? ' on' : '')} onClick={() => { hap(10); setPick(cur?.trained ? cur.kinds ?? [] : []) }}>
+        <button className={'card big-q yes' + (cur?.trained === true ? ' on' : '')} onClick={open}>
           <svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
           <b>Treinei</b>
           {cur?.trained && cur.kinds && cur.kinds.length > 0 && <small>{cur.kinds.map(k => kindLabel(k).split(' ')[0]).join(' ')}</small>}
@@ -123,8 +161,16 @@ export default function Hoje({ data, reload, mutate, toast }: Ctx) {
               )
             })}
           </div>
-          <button className="btn big" disabled={!pick.length} onClick={() => { save({ trained: true, kinds: pick }); setPick(null) }}>
-            {pick.length ? 'Marcar treino' : 'Escolhe pelo menos 1'}
+          <textarea className="obs" value={note} onChange={e => setNote(e.target.value)} placeholder="Observação (opcional): fiz 18 barras, joguei basquete…" maxLength={500} rows={2} />
+          <div className="obs-photo">
+            {shown ? (
+              <><img src={shown} alt="" /><button className="later" onClick={() => { hap(6); setShot('del') }}>tirar foto</button></>
+            ) : (
+              <label className="btn ghost"><input type="file" accept="image/*" onChange={pickPhoto} hidden />📷 Foto do treino (opcional)</label>
+            )}
+          </div>
+          <button className="btn big" disabled={!pick.length || sending} onClick={mark}>
+            {sending ? 'Subindo foto…' : pick.length ? (cur?.trained ? 'Salvar treino' : 'Marcar treino') : 'Escolhe pelo menos 1'}
           </button>
           {cur?.trained && <button className="later" onClick={() => { save({ trained: null, kinds: [] }); setPick(null) }}>desmarcar treino</button>}
         </Sheet>

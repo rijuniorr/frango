@@ -61,7 +61,7 @@ const PHOTO = await img()
   await page.screenshot({ path: `${OUT}/s23-feed-avatar.png` })
 
   // 2. deslizar em cima da FOTO do antes/depois (longe da alça) troca de aba
-  await page.evaluate(() => document.querySelectorAll('main')[0].scrollTo(0, 260)); await page.waitForTimeout(300)
+  await page.evaluate(() => { const m = document.querySelectorAll('main')[0]; const c = m.querySelector('.cmp'); m.scrollTo(0, c.getBoundingClientRect().top + m.scrollTop - 200) }); await page.waitForTimeout(300)
   const r = await page.evaluate(() => { const c = document.querySelectorAll('main')[0].querySelector('.cmp').getBoundingClientRect(); return { l: c.left, t: c.top, w: c.width, h: c.height } })
   const yy = r.t + r.h * 0.4
   const bar0 = await page.evaluate(() => document.querySelectorAll('main')[0].querySelector('.cmp .bar').style.left)

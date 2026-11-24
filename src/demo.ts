@@ -23,7 +23,7 @@ export function demo(asSara = false): Data {
   const days: Data['days'] = []
   for (let i = 0; i < 40; i++) {
     const d = iso(new Date(Date.now() - i * 864e5))
-    days.push({ user_id: R, day: d, trained: i % 3 !== 2, junk: i % 4 === 0 ? 1 : 0, kinds: i % 2 ? ['academia'] : ['corrida', 'aerobico'] })
+    days.push({ user_id: R, day: d, trained: i % 3 !== 2, junk: i % 4 === 0 ? 1 : 0, kinds: i % 2 ? ['academia'] : ['corrida', 'aerobico'], ...(i === 0 ? { note: 'Fiz 18 barras. Bora.', updated_at: new Date().toISOString() } : {}) })
     days.push({ user_id: S, day: d, trained: i % 5 !== 4, junk: i % 6 === 0 ? 1 : 0, kinds: ['calistenia'] })
     days.push({ user_id: F, day: d, trained: i % 4 === 3 ? false : true, junk: i % 3 === 0 ? 2 : 0, kinds: ['academia'] })
   }

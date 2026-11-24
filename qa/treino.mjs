@@ -1,0 +1,40 @@
+// v2.2: treino vira post no feed (observação + foto). Uso: vite na 5182 + `node qa/treino.mjs`
+import { chromium } from 'playwright'
+const res = []
+const ok = (n, c, i = '') => res.push(`${c ? 'OK  ' : 'FALHA'} ${n} ${i}`)
+const b = await chromium.launch()
+const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, serviceWorkers: 'block' })
+await ctx.route(/supabase\.co/, r => r.fulfill({ status: 200, contentType: 'application/json', body: '{"path":"x"}' })) // finge sucesso, nunca toca produção
+await ctx.addInitScript(() => { localStorage.setItem('frango.install.later', '9999999999999'); localStorage.setItem('frango.dicas3', '1') })
+const page = await ctx.newPage()
+const errs = []; page.on('pageerror', e => errs.push(e.message))
+await page.goto('http://localhost:5182/?demo'); await page.waitForSelector('.dock'); await page.waitForTimeout(600)
+
+const feed = page.locator('main').nth(0)
+ok('feed tem posts de treino', await feed.locator('.day-post').count() > 5, String(await feed.locator('.day-post').count()))
+const first = await feed.locator('.post').first().innerText()
+ok('post mais novo é o treino de hoje com observação', /Ricardo/.test(first) && /18 barras/.test(first) && /hoje/.test(first), JSON.stringify(first.slice(0, 80)))
+ok('check-in continua no feed', await feed.locator('.post:not(.day-post)').count() > 0)
+ok('furou aparece', await feed.locator('.day-post.off').count() > 0)
+ok('besteira aparece', /besteira/.test(await feed.innerText()))
+
+// Hoje: abre o sheet, escreve observação, anexa foto, salva
+await page.locator('.dock button[aria-label="Hoje"]').click(); await page.waitForTimeout(500)
+await page.locator('main').nth(1).locator('.big-q.yes').click(); await page.waitForTimeout(500)
+const ta = page.locator('.obs')
+ok('sheet tem observação preenchida com a de hoje', (await ta.inputValue()) === 'Fiz 18 barras. Bora.')
+await ta.fill('Joguei basquete hoje')
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
+await page.locator('.obs-photo input[type=file]').setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: png })
+await page.waitForSelector('.obs-photo img', { timeout: 4000 }).catch(() => {})
+ok('foto aparece no sheet', await page.locator('.obs-photo img').count() === 1)
+await page.getByRole('button', { name: /Salvar treino|Marcar treino/ }).click(); await page.waitForTimeout(800)
+await page.locator('.dock button[aria-label="Feed"]').click(); await page.waitForTimeout(600)
+const top = await feed.locator('.post').first()
+ok('feed mostra a nova observação', /basquete/.test(await top.innerText()))
+ok('feed mostra a foto do treino', await top.locator('.day-photo').count() === 1)
+await page.screenshot({ path: 'qa/treino-feed.png' })
+ok('sem erro de JS', errs.length === 0, errs.join(' | '))
+await b.close()
+console.log(res.join('\n'))
+process.exit(res.some(r => r.startsWith('FALHA')) ? 1 : 0)

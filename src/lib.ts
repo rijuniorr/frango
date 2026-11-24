@@ -11,7 +11,7 @@ export const ANGLES: Angle[] = ['frente', 'lado', 'costas', 'livre'] // livre = 
 
 export type Profile = { id: string; username: string; name: string; is_admin: boolean; height_cm: number | null; goal_kg: number | null; weight_kg: number | null; fat_pct: number | null; avatar: string | null }
 export type Settings = { max_skips: number; max_junk: number }
-export type Day = { user_id: string; day: string; trained: boolean | null; junk: number; kinds: string[] | null }
+export type Day = { user_id: string; day: string; trained: boolean | null; junk: number; kinds: string[] | null; note?: string | null; photo?: string | null; updated_at?: string }
 
 // o que dá pra marcar quando treinou
 export const KINDS: [string, string][] = [
@@ -121,7 +121,8 @@ export async function load(me: string): Promise<Data> {
   ])
   const checkins = (c.data ?? []) as Checkin[]
   const profiles = (p.data ?? []) as Profile[]
-  const paths = [...checkins.flatMap(x => ANGLES.map(a => x.photos[a]).filter(v => typeof v === 'string')), ...profiles.map(x => x.avatar)].filter(Boolean) as string[]
+  const days = (d.data ?? []) as Day[]
+  const paths = [...checkins.flatMap(x => ANGLES.map(a => x.photos[a]).filter(v => typeof v === 'string')), ...profiles.map(x => x.avatar), ...days.map(x => x.photo)].filter(Boolean) as string[]
   // links assinados valem 6h: reaproveita os que têm menos de 5h (senão toda foto baixa de novo e pisca)
   const now = Date.now()
   const need = paths.filter(x => !signed.has(x) || now - signed.get(x)!.t > 5 * 3600e3)
@@ -135,7 +136,7 @@ export async function load(me: string): Promise<Data> {
     me,
     profiles,
     settings: (s.data ?? { max_skips: 2, max_junk: 2 }) as Settings,
-    days: (d.data ?? []) as Day[],
+    days,
     checkins,
     likes: (l.data ?? []) as Like[],
     comments: (cm.data ?? []) as Comment[],

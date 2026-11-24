@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { Ctx } from './App'
-import { sb, hap, ordered, fmtKg, fmtDate, iso, monday, weekStats, avatarOf, nice, ANGLES, type Angle, type Checkin } from './lib'
+import { sb, hap, ordered, fmtKg, fmtDate, iso, monday, today, addDays, weekStats, avatarOf, nice, kindLabel, ANGLES, type Angle, type Checkin, type Day } from './lib'
 import { Compare, Avatar, Confirm, Seg } from './ui'
 
 const DOW = ['S', 'T', 'Q', 'Q', 'S', 'S', 'D']
@@ -18,6 +18,11 @@ export default function Feed(ctx: Ctx) {
   const n = first ? Math.round((monday().getTime() - new Date(first + 'T00:00').getTime()) / (7 * 864e5)) + 1 : 1
   const posted = data.checkins.some(c => c.user_id === data.me && c.week === week)
   const people = ordered(data)
+  // linha do tempo: check-ins + dias marcados (treinou, furou ou comeu besteira), mais novo em cima
+  const feed = [
+    ...data.checkins.map(c => ({ k: iso(new Date(c.created_at)) + c.created_at, c, d: undefined as Day | undefined })),
+    ...data.days.filter(d => d.trained != null || d.junk > 0).map(d => ({ k: d.day + (d.updated_at ?? ''), c: undefined as Checkin | undefined, d })),
+  ].sort((a, b) => (a.k < b.k ? 1 : -1))
 
   return (
     <>
@@ -61,8 +66,8 @@ export default function Feed(ctx: Ctx) {
       )}
 
       <h2 className="h">Linha do tempo</h2>
-      {data.checkins.length === 0 && <p className="empty-txt">Ninguém postou ainda. Seja o primeiro frango.</p>}
-      {[...data.checkins].reverse().map(c => <Post key={c.id} c={c} {...ctx} />)}
+      {feed.length === 0 && <p className="empty-txt">Ninguém postou ainda. Seja o primeiro frango.</p>}
+      {feed.map(x => (x.c ? <Post key={x.c.id} c={x.c} {...ctx} /> : <DayPost key={x.d!.user_id + x.d!.day} d={x.d!} data={data} />))}
     </>
   )
 }
@@ -169,6 +174,28 @@ function Post({ c, data, mutate, toast }: { c: Checkin } & Ctx) {
         <input value={txt} onChange={e => setTxt(e.target.value)} placeholder="Comentar…" maxLength={500} enterKeyHint="send" />
         {txt.trim() && <button disabled={sending}>{sending ? '…' : 'enviar'}</button>}
       </form>
+    </article>
+  )
+}
+
+const when = (day: string) => (day === today() ? 'hoje' : day === iso(addDays(new Date(), -1)) ? 'ontem' : fmtDate(day))
+
+// dia marcado na aba Hoje vira post: "Ricardo treinou 🤸 Calistenia" + observação + foto
+function DayPost({ d, data }: { d: Day; data: Ctx['data'] }) {
+  const p = data.profiles.find(x => x.id === d.user_id)
+  const kinds = (d.kinds ?? []).map(kindLabel)
+  const junk = d.junk > 0 ? `${d.junk} ${d.junk === 1 ? 'besteira' : 'besteiras'}` : ''
+  const what = d.trained ? <>treinou {kinds.length ? <b>{kinds.join(' · ')}</b> : null}</> : d.trained === false ? <>furou o treino</> : <>comeu {junk}</>
+  const photo = d.trained && d.photo ? data.urls[d.photo] : undefined
+  return (
+    <article className={'card post day-post' + (d.trained === false ? ' off' : d.trained ? ' on' : ' junk')}>
+      <div className="post-top">
+        <Avatar name={p?.name ?? '?'} mine={d.user_id === data.me} src={avatarOf(data, d.user_id)} size={36} />
+        <div><p className="day-what"><b>{p?.name}</b> {what}</p><span>{when(d.day)}{d.trained != null && junk ? ' · ' + junk : ''}</span></div>
+        <i className="day-dot" aria-hidden="true">{d.trained ? '✓' : d.trained === false ? '✗' : '🍩'}</i>
+      </div>
+      {d.trained && d.note && <p className="note">“{d.note}”</p>}
+      {photo && <img className="day-photo" src={photo} alt="" loading="lazy" />}
     </article>
   )
 }
