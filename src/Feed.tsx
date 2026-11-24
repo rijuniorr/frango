@@ -20,9 +20,9 @@ export default function Feed(ctx: Ctx) {
   const people = ordered(data)
   // linha do tempo: check-ins + dias marcados (treinou, furou ou comeu besteira), mais novo em cima
   const feed = [
-    ...data.checkins.map(c => ({ k: iso(new Date(c.created_at)) + c.created_at, c, d: undefined as Day | undefined })),
-    ...data.days.filter(d => d.trained != null || d.junk > 0).map(d => ({ k: d.day + (d.updated_at ?? ''), c: undefined as Checkin | undefined, d })),
-  ].sort((a, b) => (a.k < b.k ? 1 : -1))
+    ...data.checkins.map(c => ({ day: iso(new Date(c.created_at)), t: Date.parse(c.created_at) || 0, c, d: undefined as Day | undefined })),
+    ...data.days.filter(d => d.trained != null || d.junk > 0).map(d => ({ day: d.day, t: Date.parse(d.updated_at ?? '') || 0, c: undefined as Checkin | undefined, d })),
+  ].sort((a, b) => (a.day !== b.day ? (a.day < b.day ? 1 : -1) : b.t - a.t)) // por dia; no mesmo dia, o mais recente em cima
 
   return (
     <>

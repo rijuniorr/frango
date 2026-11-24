@@ -34,7 +34,7 @@ export default function Hoje({ data, reload, mutate, toast }: Ctx) {
 
   async function save(patch: Partial<Day>) {
     const prev = cur
-    const next: Day = { user_id: data.me, day, trained: cur?.trained ?? null, junk: cur?.junk ?? 0, kinds: cur?.kinds ?? [], note: cur?.note ?? null, photo: cur?.photo ?? null, ...patch }
+    const next: Day = { user_id: data.me, day, trained: cur?.trained ?? null, junk: cur?.junk ?? 0, kinds: cur?.kinds ?? [], note: cur?.note ?? null, photo: cur?.photo ?? null, ...patch, updated_at: new Date().toISOString() }
     if (next.trained !== true) { next.note = null; next.photo = null } // furou/desmarcou: some do post
     // tela muda na hora; o banco vem depois
     mutate(d => ({ ...d, days: [...d.days.filter(x => !(x.user_id === data.me && x.day === day)), next] }))
@@ -43,7 +43,7 @@ export default function Hoje({ data, reload, mutate, toast }: Ctx) {
     if (patch.trained === false && skips > max_skips) toast(roast('skip'), 'roast')
     else if (patch.junk != null && patch.junk > (cur?.junk ?? 0) && junk > max_junk) toast(roast('junk'), 'roast')
     else if (patch.trained === true) toast('Boa, frango. Menos frango a cada dia.')
-    const { error } = await sb.from('days').upsert({ ...next, updated_at: new Date().toISOString() })
+    const { error } = await sb.from('days').upsert(next)
     if (!error && cur?.photo && cur.photo !== next.photo) sb.storage.from('fotos').remove([cur.photo]) // não acumula foto velha
     if (error) {
       // desfaz e avisa (o aviso entra na fila, não apaga a bronca)
@@ -166,7 +166,7 @@ export default function Hoje({ data, reload, mutate, toast }: Ctx) {
             {shown ? (
               <><img src={shown} alt="" /><button className="later" onClick={() => { hap(6); setShot('del') }}>tirar foto</button></>
             ) : (
-              <label className="btn ghost"><input type="file" accept="image/*" onChange={pickPhoto} hidden />📷 Foto do treino (opcional)</label>
+              <label className="btn pick-btn"><input type="file" accept="image/*" onChange={pickPhoto} hidden />📷 Foto do treino (opcional)</label>
             )}
           </div>
           <button className="btn big" disabled={!pick.length || sending} onClick={mark}>

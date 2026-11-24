@@ -20,10 +20,13 @@ export function demo(asSara = false): Data {
       checkins.push({ id: u + i, user_id: u, week: wk(i), weight: +(base - (7 - i) * 0.5).toFixed(1), note: u === R && i === 2 ? 'Só pra Sara, amor 💗' : i === 1 ? 'Supino 70. Bora.' : null, photos: { frente: path, ...(i === 7 && u === R ? { pose: { frente: DEMO_POSE } } : {}) }, created_at: wk(i), ...(u === R && i === 2 ? { audience: ['sara'] } : {}) })
     }
   }
+  // igual à vida real: o Gabriel fez o check-in hoje, 1 h atrás (o treino do Ricardo é de 2 h atrás)
+  urls['f/hoje/frente.jpg'] = svg(44, '#9fa39e')
+  checkins.push({ id: 'f0', user_id: F, week: iso(m), weight: 87.6, note: null, photos: { frente: 'f/hoje/frente.jpg' }, created_at: new Date(Date.now() - 3600e3).toISOString() })
   const days: Data['days'] = []
   for (let i = 0; i < 40; i++) {
     const d = iso(new Date(Date.now() - i * 864e5))
-    days.push({ user_id: R, day: d, trained: i % 3 !== 2, junk: i % 4 === 0 ? 1 : 0, kinds: i % 2 ? ['academia'] : ['corrida', 'aerobico'], ...(i === 0 ? { note: 'Fiz 18 barras. Bora.', updated_at: new Date().toISOString() } : {}) })
+    days.push({ user_id: R, day: d, trained: i % 3 !== 2, junk: i % 4 === 0 ? 1 : 0, kinds: i % 2 ? ['academia'] : ['corrida', 'aerobico'], ...(i === 0 ? { note: 'Fiz 18 barras. Bora.', updated_at: new Date(Date.now() - 2 * 3600e3).toISOString() } : {}) })
     days.push({ user_id: S, day: d, trained: i % 5 !== 4, junk: i % 6 === 0 ? 1 : 0, kinds: ['calistenia'] })
     days.push({ user_id: F, day: d, trained: i % 4 === 3 ? false : true, junk: i % 3 === 0 ? 2 : 0, kinds: ['academia'] })
   }
